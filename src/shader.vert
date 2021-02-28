@@ -1,15 +1,21 @@
 #version 450
 
+layout(location=0) in vec3 a_position;
+layout(location=1) in vec2 a_tex_coords;
+layout(location=5) in vec4 model_matrix0;
+layout(location=6) in vec4 model_matrix1;
+layout(location=7) in vec4 model_matrix2;
+layout(location=8) in vec4 model_matrix3;
 
-const vec2 positions[3] = vec2[3](
-    vec2(0.0, 0.5),
-    vec2(-0.5, -0.5),
-    vec2(0.5, -0.5)
-);
+layout(location=0) out vec2 v_tex_coords;
 
-layout(location=0) out vec2 v_position;
+
+layout(set=1, binding=0) uniform Uniforms {
+    mat4 u_view_proj;
+};
 
 void main() {
-    v_position = positions[gl_VertexIndex];
-    gl_Position = vec4(positions[gl_VertexIndex], 0, 1.0);
+    mat4 model_matrix = mat4(model_matrix0, model_matrix1, model_matrix2, model_matrix3);
+    v_tex_coords = a_tex_coords;
+    gl_Position = u_view_proj * model_matrix * vec4(a_position, 1.0);
 }

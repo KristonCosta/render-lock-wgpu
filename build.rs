@@ -9,7 +9,7 @@ use std::fs::{
     read_to_string,
     write
 };
-use std::path::{PathBuf, Path};
+use std::path::PathBuf;
 
 struct ShaderData {
     src: String,
