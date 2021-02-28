@@ -20,7 +20,7 @@ use bytemuck::bytes_of;
 use cgmath::{Zero, InnerSpace};
 
 mod texture;
-
+mod model;
 
 struct Instance {
     position: cgmath::Vector3<f32>,
@@ -194,10 +194,18 @@ impl CameraController {
             // Rescale the distance between the target and eye so
             // that it doesn't change. The eye therefore still
             // lies on the circle made by the target and eye.
-            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag;
+            camera.eye = camera.target - ((forward + right) * self.speed).normalize() * forward_mag;
         }
         if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
+            camera.eye = camera.target - ((forward - right) * self.speed).normalize() * forward_mag;
+        }
+
+        if self.is_up_pressed {
+            camera.eye = camera.target - ((forward + camera.up) * self.speed).normalize() * forward_mag;
+        }
+
+        if self.is_down_pressed {
+            camera.eye = camera.target - ((forward - camera.up) * self.speed).normalize() * forward_mag;
         }
     }
 }
@@ -286,6 +294,7 @@ struct State {
     camera_controller: CameraController,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
+    depth_texture: texture::Texture,
 }
 
 const NUM_INSTANCES_PER_ROW: u32 = 10;
@@ -461,6 +470,8 @@ impl State {
             }
         );
 
+        let depth_texture = texture::Texture::create_depth_texture(&device, &sc_desc, "depth_texture");
+
         let render_pipeline = device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
@@ -487,7 +498,14 @@ impl State {
                     cull_mode: wgpu::CullMode::Back,
                     ..Default::default()
                 },
-                depth_stencil: None,
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: texture::Texture::DEPTH_FORMAT,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                    clamp_depth: false
+                }),
                 multisample: Default::default(),
             }
         );
@@ -545,7 +563,8 @@ impl State {
             uniform_bind_group,
             camera_controller,
             instances,
-            instance_buffer
+            instance_buffer,
+            depth_texture
         }
     }
 
@@ -553,6 +572,7 @@ impl State {
         self.size = new_size;
         self.sc_desc.width = new_size.width;
         self.sc_desc.height = new_size.height;
+        self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.sc_desc, "depth_texture");
         self.swap_chain = self.device.create_swap_chain(&self.surface, &self.sc_desc);
     }
 
@@ -589,7 +609,14 @@ impl State {
                         },
                     }
                 ],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true
+                    }),
+                    stencil_ops: None
+                }),
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
