@@ -164,7 +164,7 @@ impl State {
                 b: 0.3,
                 a: 1.0
               }),
-              store: false,
+              store: true,
             }
           }
         ],

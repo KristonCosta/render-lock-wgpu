@@ -45,6 +45,9 @@ impl ShaderData {
 }
 
 fn main() -> Result<()> {
+
+    println!("cargo:rerun-if-changed=src");
+
     let mut shader_paths = [
         glob("./src/**/*.vert")?,
         glob("./src/**/*.frag")?,
