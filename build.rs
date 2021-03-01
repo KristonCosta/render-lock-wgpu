@@ -10,6 +10,10 @@ use std::fs::{
     write
 };
 use std::path::PathBuf;
+use std::env;
+use fs_extra::dir::CopyOptions;
+use fs_extra::copy_items;
+use std::ptr::copy;
 
 struct ShaderData {
     src: String,
@@ -75,5 +79,15 @@ fn main() -> Result<()> {
         )?;
         write(shader.spv_path, compiled.as_binary_u8())?;
     }
+
+    println!("cargo:rerun-if-changed=resources/*");
+
+    let out_dir = env::var("OUT_DIR")?;
+    let mut copy_options = CopyOptions::new();
+    copy_options.overwrite = true;
+    let mut paths_to_copy = Vec::new();
+    paths_to_copy.push("resources/");
+    copy_items(&paths_to_copy, out_dir, &copy_options)?;
+
     Ok(())
 }

@@ -18,6 +18,7 @@ use wgpu::util::DeviceExt;
 use image::GenericImageView;
 use bytemuck::bytes_of;
 use cgmath::{Zero, InnerSpace};
+use crate::model::Vertex;
 
 mod texture;
 mod model;
@@ -233,46 +234,6 @@ impl Uniforms {
     }
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-}
-
-const VERTICIES: &[Vertex] = &[
-    Vertex { position: [-0.5, -0.5, 0.0], tex_coords: [0.0, 1.0] },
-    Vertex { position: [0.5, -0.5, 0.0], tex_coords: [1.0, 1.0] },
-    Vertex { position: [0.5, 0.5, 0.0], tex_coords: [1.0, 0.0] },
-    Vertex { position: [-0.5, 0.5, 0.0], tex_coords: [0.0, 0.0] },
-];
-
-const INDICIES: &[u16] = &[
-    0, 1, 2,
-    0, 2, 3
-];
-
-impl Vertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: Default::default(),
-            attributes: &[
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float3,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float2,
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                }
-            ],
-        }
-    }
-}
-
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -281,10 +242,6 @@ struct State {
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
     diffuse_texture: texture::Texture,
     camera: Camera,
@@ -386,27 +343,6 @@ impl State {
         let vs_module = device.create_shader_module(&wgpu::include_spirv!("shader.vert.spv"));
         let fs_module = device.create_shader_module(&wgpu::include_spirv!("shader.frag.spv"));
 
-
-
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICIES),
-                usage: wgpu::BufferUsage::VERTEX,
-            }
-        );
-
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICIES),
-                usage: wgpu::BufferUsage::INDEX,
-            }
-        );
-
-        let num_vertices = VERTICIES.len() as u32;
-        let num_indices = INDICIES.len() as u32;
-
         let camera = Camera {
             eye: (0.0, 0.0, 3.0).into(),
             target: (0.0, 0.0, 0.0).into(),
@@ -480,8 +416,7 @@ impl State {
                     module: &vs_module,
                     entry_point: "main",
                     buffers: &[
-                        Vertex::desc(),
-                        InstanceRaw::desc(),
+                        model::ModelVertex::desc()
                     ],
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -551,10 +486,6 @@ impl State {
             swap_chain,
             size,
             render_pipeline,
-            vertex_buffer,
-            num_vertices,
-            index_buffer,
-            num_indices,
             diffuse_bind_group,
             diffuse_texture,
             camera,
@@ -623,11 +554,6 @@ impl State {
 
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0, 0..self.instances.len() as _);
 
             render_pass.draw(0..3, 0..1);
         }
