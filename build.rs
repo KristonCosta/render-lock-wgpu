@@ -4,15 +4,12 @@ FROM https://sotrh.github.io/learn-wgpu/beginner/tutorial3-pipeline/#compiling-s
 
  */
 use anyhow::*;
-use glob::glob;
-use std::fs::{
-    read_to_string,
-    write
-};
-use std::path::PathBuf;
-use std::env;
-use fs_extra::dir::CopyOptions;
 use fs_extra::copy_items;
+use fs_extra::dir::CopyOptions;
+use glob::glob;
+use std::env;
+use std::fs::{read_to_string, write};
+use std::path::PathBuf;
 use std::ptr::copy;
 
 struct ShaderData {
@@ -43,13 +40,12 @@ impl ShaderData {
             src,
             src_path,
             spv_path,
-            kind
+            kind,
         })
     }
 }
 
 fn main() -> Result<()> {
-
     println!("cargo:rerun-if-changed=src");
 
     let mut shader_paths = [
@@ -69,7 +65,10 @@ fn main() -> Result<()> {
     let mut compiler = shaderc::Compiler::new().context("Unable to create shader compiler")?;
 
     for shader in shaders {
-        println!("cargo:rerun-if-changed={}", shader.src_path.as_os_str().to_str().unwrap());
+        println!(
+            "cargo:rerun-if-changed={}",
+            shader.src_path.as_os_str().to_str().unwrap()
+        );
         let compiled = compiler.compile_into_spirv(
             &shader.src,
             shader.kind,
