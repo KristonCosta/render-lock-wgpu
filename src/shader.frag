@@ -27,13 +27,13 @@ layout(set=2, binding=0) uniform Light {
 void main() {
 
     vec4 object_color = texture(sampler2D(t_diffuse, s_diffuse), v_tex_coords);
-    vec4 object_normal = texture(sampler2D(t_normal, s_normal), v_tex_coords);
+    // Not supporting normal mapping for now
+    // vec4 object_normal = texture(sampler2D(t_normal, s_normal), v_tex_coords);
 
     float ambient_strength = 0.1;
     vec3 ambient_color = light_color * ambient_strength;
-
-    vec3 normal = normalize(object_normal.rgb * 2.0 - 1.0);
-
+    vec3 normal = normalize(v_normal);
+    // vec3 normal = normalize(object_normal.rgb * 2.0 - 1.0);
     vec3 light_dir = normalize(light_position - v_position);
 
     vec3 view_dir = normalize(u_view_position - v_position);

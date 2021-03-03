@@ -14,9 +14,50 @@ use cgmath::prelude::*;
 use image::GenericImageView;
 use std::ops::Range;
 use wgpu::util::DeviceExt;
+use std::time::{Instant, Duration};
 
 mod model;
 mod texture;
+
+#[derive(Debug)]
+pub struct TimeStep {
+    last_time: Instant,
+    delta_time: f64,
+    frame_count: u32,
+    frame_time: f64,
+    frame_rate: u64,
+}
+
+impl TimeStep {
+    // https://gitlab.com/flukejones/diir-doom/blob/master/game/src/main.rs
+    // Grabbed this from here
+    pub fn new() -> TimeStep {
+        TimeStep {
+            last_time: Instant::now(),
+            delta_time: 0.0,
+            frame_count: 0,
+            frame_time: 0.0,
+            frame_rate: 0,
+        }
+    }
+
+    pub fn delta(&mut self) -> f64 {
+        let current_time = Instant::now();
+        let delta =  current_time.duration_since(self.last_time).as_millis() as f64;
+        self.last_time = current_time;
+        self.delta_time = delta;
+        self.frame_count += 1;
+        self.frame_time += self.delta_time;
+
+        // per second
+        if self.frame_time >= 1000.0 {
+            self.frame_rate = self.frame_count as u64;
+            self.frame_count = 0;
+            self.frame_time = 0.0;
+        }
+        delta
+    }
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -250,8 +291,6 @@ struct State {
     swap_chain: wgpu::SwapChain,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
-    diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: texture::Texture,
     camera: Camera,
     uniforms: Uniforms,
     uniform_buffer: wgpu::Buffer,
@@ -265,6 +304,11 @@ struct State {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
+    platform: imgui_winit_support::WinitPlatform,
+    gui_context: imgui::Context,
+    renderer: imgui_wgpu::Renderer,
+    clock: TimeStep,
+    last_cursor: Option<imgui::MouseCursor>
 }
 
 const NUM_INSTANCES_PER_ROW: u32 = 10;
@@ -277,6 +321,32 @@ const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
 
 impl State {
     async fn new(window: &Window) -> Self {
+
+        let mut gui = imgui::Context::create();
+        let mut platform = imgui_winit_support::WinitPlatform::init(&mut gui);
+        platform.attach_window(
+            gui.io_mut(),
+            &window,
+            imgui_winit_support::HiDpiMode::Default
+        );
+
+        let hidpi_factor = window.scale_factor();
+        let font_size = (13.0 * hidpi_factor) as f32;
+        gui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
+        gui.fonts().add_font(&[
+            imgui::FontSource::DefaultFontData {
+                config: Some(
+                    imgui::FontConfig {
+                        oversample_h: 1,
+                        pixel_snap_h: true,
+                        size_pixels: font_size,
+                        ..Default::default()
+                    }
+                ),
+            }
+        ]);
+
+
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
@@ -308,15 +378,18 @@ impl State {
             format: swapchain_format.into(),
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::Immediate,
         };
 
-        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
-        let diffuse_bytes = include_bytes!("../resources/happy-tree.png");
-        let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
-        let diffuse_texture =
-            texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree").unwrap();
+        let renderer_config = imgui_wgpu::RendererConfig {
+            texture_format: sc_desc.format,
+            ..Default::default()
+        };
+
+        let renderer = imgui_wgpu::Renderer::new(&mut gui, &device, &queue, renderer_config);
+
+        let swap_chain = device.create_swap_chain(&surface, &sc_desc);
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -363,20 +436,6 @@ impl State {
                 ],
             });
 
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("diffuse_bind_group"),
-            layout: &texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-            ],
-        });
 
         let camera = Camera {
             eye: (0.0, 0.0, 3.0).into(),
@@ -566,8 +625,6 @@ impl State {
             swap_chain,
             size,
             render_pipeline,
-            diffuse_bind_group,
-            diffuse_texture,
             camera,
             uniforms,
             uniform_buffer,
@@ -581,6 +638,11 @@ impl State {
             light_buffer,
             light_bind_group,
             light_render_pipeline,
+            platform,
+            gui_context: gui,
+            renderer,
+            clock: TimeStep::new(),
+            last_cursor: None
         }
     }
 
@@ -645,6 +707,7 @@ impl State {
     }
 
     fn update(&mut self) {
+
         self.camera_controller.update_camera(&mut self.camera);
         self.uniforms.update_view_proj(&self.camera);
         self.queue.write_buffer(
@@ -663,7 +726,31 @@ impl State {
             .write_buffer(&self.light_buffer, 0, bytemuck::cast_slice(&[self.light]));
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SwapChainError> {
+    fn render(&mut self, window: &Window) -> Result<(), wgpu::SwapChainError> {
+        let current_time = Instant::now();
+        let dt = current_time.duration_since(self.clock.last_time);
+        self.clock.delta();
+        self.gui_context.io_mut().update_delta_time(dt);
+        self.platform
+            .prepare_frame(self.gui_context.io_mut(), window)
+            .unwrap();
+        let fps = self.clock.frame_rate;
+        let ui = self.gui_context.frame();
+        {
+            let window = imgui::Window::new(imgui::im_str!("Hello Imgui from WGPU!"));
+            window
+                .size([300.0, 100.0], imgui::Condition::FirstUseEver)
+                .build(&ui, || {
+                    ui.text(imgui::im_str!("Hello world!"));
+                    ui.text(imgui::im_str!("This is a demo of imgui-rs using imgui-wgpu!"));
+                    ui.separator();
+                    let mouse_pos = ui.io().mouse_pos;
+                    ui.text(imgui::im_str!(
+                "FPS: ({:.1})",
+                fps,
+            ));
+                });
+        }
         let frame = self.swap_chain.get_current_frame()?.output;
         let mut encoder = self
             .device
@@ -713,7 +800,24 @@ impl State {
                 &self.light_bind_group
             );
         }
+        // Render the UI
 
+        self.platform.prepare_render(&ui, &window);
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                attachment: &frame.view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: true,
+                },
+            }],
+            depth_stencil_attachment: None
+        });
+        self.renderer.render(ui.render(), &self.queue, &self.device, &mut pass);
+        drop(pass);
         self.queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
@@ -756,7 +860,7 @@ fn main() {
         }
         Event::RedrawRequested(_) => {
             state.update();
-            match state.render() {
+            match state.render(&window) {
                 Ok(_) => {}
                 Err(wgpu::SwapChainError::Lost) => state.resize(state.size),
                 Err(wgpu::SwapChainError::OutOfMemory) => *control_flow = ControlFlow::Exit,
