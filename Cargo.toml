@@ -15,11 +15,14 @@ log = "0.4"
 futures = "0.3"
 wgpu-subscriber = "0.1.0"
 anyhow = "1.0"
-tobj = "2.0"
 failure = "0.1"
 imgui = "0.7"
 imgui-wgpu = "0.14"
 imgui-winit-support = "0.7"
+
+[dependencies.tobj]
+version = "2.0"
+features = ["log"]
 
 [dependencies.bytemuck]
 version = "1.5"

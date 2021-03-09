@@ -1,4 +1,5 @@
 use imgui_winit_support::WinitPlatform;
+use crate::renderer::display::Display;
 
 pub struct Gui {
     pub platform: imgui_winit_support::WinitPlatform,
@@ -7,7 +8,7 @@ pub struct Gui {
 }
 
 impl Gui {
-    pub fn new(window: &winit::window::Window, display: &crate::display::Display) -> Self {
+    pub fn new(window: &winit::window::Window, display: &Display) -> Self {
         let mut context = imgui::Context::create();
         let mut platform = imgui_winit_support::WinitPlatform::init(&mut context);
         platform.attach_window(

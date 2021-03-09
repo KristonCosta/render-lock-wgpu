@@ -1,29 +1,35 @@
 #[macro_use]
 extern crate bytemuck;
 
+use std::ops::Range;
+use std::time::{Duration, Instant};
+
+use bytemuck::bytes_of;
+use cgmath::prelude::*;
 use futures::executor::block_on;
+use image::GenericImageView;
+use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
 
-use crate::model::{DrawModel, Mesh, Vertex, DrawLight};
-use bytemuck::bytes_of;
-use cgmath::prelude::*;
-use image::GenericImageView;
-use std::ops::Range;
-use wgpu::util::DeviceExt;
-use std::time::{Instant, Duration};
-use crate::camera::{Camera, CameraController};
-use crate::display::Display;
+use renderer::texture;
+
 use crate::gui::Gui;
 
 mod gui;
-mod display;
-mod camera;
+mod renderer;
 mod model;
-mod texture;
+
+use renderer::display::*;
+use renderer::camera::*;
+use renderer::texture::*;
+use renderer::instance::*;
+use crate::model::{Vertex, Model};
+use cgmath::{Vector3, Quaternion};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct TimeStep {
@@ -73,60 +79,6 @@ struct Light {
     color: [f32; 3],
 }
 
-struct Instance {
-    position: cgmath::Vector3<f32>,
-    rotation: cgmath::Quaternion<f32>,
-}
-
-impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        InstanceRaw {
-            model: (cgmath::Matrix4::from_translation(self.position)
-                * cgmath::Matrix4::from(self.rotation))
-            .into(),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    model: [[f32; 4]; 4],
-}
-
-impl InstanceRaw {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            step_mode: wgpu::InputStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float4,
-                    offset: 0,
-                    shader_location: 5,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float4,
-                    offset: std::mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float4,
-                    offset: std::mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 7,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float4,
-                    offset: std::mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 8,
-                },
-            ],
-        }
-    }
-}
-
-
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
@@ -161,26 +113,16 @@ struct State {
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
 
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
-    obj_model: model::Model,
+    obj_instance: Instance,
+    obj_model_instance : Instance,
     light: Light,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
-    light_render_pipeline: wgpu::RenderPipeline,
     gui: Gui,
     clock: TimeStep,
     last_cursor: Option<imgui::MouseCursor>
 }
-
-const NUM_INSTANCES_PER_ROW: u32 = 10;
-const NUM_INSTANCES: u32 = NUM_INSTANCES_PER_ROW * NUM_INSTANCES_PER_ROW;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> = cgmath::Vector3::new(
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-    0.0,
-    NUM_INSTANCES_PER_ROW as f32 * 0.5,
-);
 
 impl State {
     async fn new(window: &Window) -> Self {
@@ -202,25 +144,6 @@ impl State {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler {
-                            comparison: false,
-                            filtering: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStage::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
                         visibility: wgpu::ShaderStage::FRAGMENT,
                         ty: wgpu::BindingType::Sampler {
                             comparison: false,
@@ -344,63 +267,17 @@ impl State {
             )
         };
 
-        let light_render_pipeline = {
-            let layout = display.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[&uniform_bind_group_layout, &light_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-            Self::create_render_pipeline(
-                "Light render pipeline",
-                &display.device,
-                &layout,
-                display.swap_chain_descriptor.format,
-                texture::Texture::DEPTH_FORMAT,
-                &[model::ModelVertex::desc()],
-                &wgpu::include_spirv!("../resources/shaders/light.vert.spv"),
-                &wgpu::include_spirv!("../resources/shaders/light.frag.spv"),
-            )
-        };
-
         let depth_texture =
             texture::Texture::create_depth_texture(&display.device, &display.swap_chain_descriptor, "depth_texture");
 
 
         let camera_controller = CameraController::new(0.2);
 
-        const SPACE_BETWEEN: f32 = 3.0;
-        let instances = (0..NUM_INSTANCES_PER_ROW)
-            .flat_map(|z| {
-                (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                    let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                    let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
 
-                    let position = cgmath::Vector3 { x, y: 0.0, z };
-
-                    use cgmath::Rotation3;
-
-                    let rotation = if position.is_zero() {
-                        cgmath::Quaternion::from_axis_angle(
-                            cgmath::Vector3::unit_z(),
-                            cgmath::Deg(0.0),
-                        )
-                    } else {
-                        cgmath::Quaternion::from_axis_angle(
-                            position.clone().normalize(),
-                            cgmath::Deg(45.0),
-                        )
-                    };
-                    Instance { position, rotation }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         let instance_buffer = display.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsage::VERTEX,
+            contents: bytemuck::cast_slice(&[raw]),
+            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
         });
 
         let resources = std::path::Path::new(env!("OUT_DIR")).join("resources");
@@ -408,9 +285,32 @@ impl State {
             &display.device,
             &display.queue,
             &texture_bind_group_layout,
-            resources.join("cube.obj"),
+            resources.join("viking_room.obj"),
         )
         .unwrap();
+
+        let obj_instance = Instance {
+            position: Vector3::new(0.0, 0.0, 0.0),
+            rotation: Quaternion::zero(),
+            buff: instance_buffer,
+            model: Rc::new(obj_model),
+        };
+
+        let obj_model_cube = model::Model::load(
+            &display.device,
+            &display.queue,
+            &texture_bind_group_layout,
+            resources.join("cube.obj"),
+        ).unwrap();
+
+
+
+        let obj_model_instance = Instance {
+            position: Vector3::new(10.0, 0.0, 0.0),
+            rotation: Quaternion::zero(),
+            buff: instance_buffer,
+            model: Rc::new(obj_model_cube)
+        };
 
         Self {
             display,
@@ -420,14 +320,12 @@ impl State {
             uniform_buffer,
             uniform_bind_group,
             camera_controller,
-            instances,
-            instance_buffer,
             depth_texture,
-            obj_model,
+            obj_instance,
+            obj_model_instance,
             light,
             light_buffer,
             light_bind_group,
-            light_render_pipeline,
             gui,
             clock: TimeStep::new(),
             last_cursor: None
@@ -570,20 +468,32 @@ impl State {
                     stencil_ops: None,
                 }),
             });
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_pipeline(&self.light_render_pipeline);
-            render_pass.draw_light_model(
-                &self.obj_model,
-                &self.uniform_bind_group,
-                &self.light_bind_group,
+            self.display.queue.write_buffer(
+                &self.obj_instance.buff,
+                0,
+                bytemuck::cast_slice(&[self.obj_instance.to_raw()])
             );
 
             render_pass.set_pipeline(&self.render_pipeline);
-
+            render_pass.set_vertex_buffer(1, self.obj_instance.buff.slice(..));
             use model::DrawModel;
-            render_pass.draw_model_instanced(
-                &self.obj_model,
-                0..self.instances.len() as u32,
+            render_pass.draw_model(
+                &self.obj_instance.model,
+                &self.uniform_bind_group,
+                &self.light_bind_group
+            );
+
+
+
+            self.display.queue.write_buffer(
+                &self.obj_model_instance.buff,
+                0,
+                bytemuck::cast_slice(&[self.obj_model_instance.to_raw()])
+            );
+            render_pass.set_vertex_buffer(1, self.obj_model_instance.buff.slice(..));
+
+            render_pass.draw_model(
+                &self.obj_model_instance.model,
                 &self.uniform_bind_group,
                 &self.light_bind_group
             );
@@ -614,6 +524,8 @@ impl State {
 
 fn main() {
     env_logger::init();
+
+    let img = image::open("resources/viking_room.png").unwrap();
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 

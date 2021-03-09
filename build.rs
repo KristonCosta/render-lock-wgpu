@@ -65,10 +65,6 @@ fn main() -> Result<()> {
     let mut compiler = shaderc::Compiler::new().context("Unable to create shader compiler")?;
 
     for shader in shaders {
-        println!(
-            "cargo:rerun-if-changed={}",
-            shader.src_path.as_os_str().to_str().unwrap()
-        );
         let compiled = compiler.compile_into_spirv(
             &shader.src,
             shader.kind,
