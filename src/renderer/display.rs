@@ -38,7 +38,7 @@ impl Display {
             format: swap_chain_format.into(),
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo
+            present_mode: wgpu::PresentMode::Immediate
         };
 
         let swap_chain = device.create_swap_chain(&surface, &swap_chain_descriptor);

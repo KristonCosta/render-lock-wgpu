@@ -114,8 +114,7 @@ struct State {
     uniform_bind_group: wgpu::BindGroup,
 
     depth_texture: texture::Texture,
-    obj_instance: Instance,
-    obj_model_instance : Instance,
+    instances: Vec<Instance>,
     light: Light,
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
@@ -274,12 +273,6 @@ impl State {
         let camera_controller = CameraController::new(0.2);
 
 
-        let instance_buffer = display.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Instance Buffer"),
-            contents: bytemuck::cast_slice(&[raw]),
-            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-        });
-
         let resources = std::path::Path::new(env!("OUT_DIR")).join("resources");
         let obj_model = model::Model::load(
             &display.device,
@@ -289,13 +282,6 @@ impl State {
         )
         .unwrap();
 
-        let obj_instance = Instance {
-            position: Vector3::new(0.0, 0.0, 0.0),
-            rotation: Quaternion::zero(),
-            buff: instance_buffer,
-            model: Rc::new(obj_model),
-        };
-
         let obj_model_cube = model::Model::load(
             &display.device,
             &display.queue,
@@ -303,14 +289,17 @@ impl State {
             resources.join("cube.obj"),
         ).unwrap();
 
+        let mut instances = Vec::new();
+        let obj_model_ref = Rc::new(obj_model_cube);
 
+        for x in 0..100 {
+            for z in 0..100 {
+                let mut obj_instance = obj_model_ref.new_instance(&display);
+                obj_instance.position = Vector3::new((x * 2) as f32, 0.0, (z * 2) as f32);
+                instances.push(obj_instance);
 
-        let obj_model_instance = Instance {
-            position: Vector3::new(10.0, 0.0, 0.0),
-            rotation: Quaternion::zero(),
-            buff: instance_buffer,
-            model: Rc::new(obj_model_cube)
-        };
+            }
+        }
 
         Self {
             display,
@@ -321,8 +310,7 @@ impl State {
             uniform_bind_group,
             camera_controller,
             depth_texture,
-            obj_instance,
-            obj_model_instance,
+            instances,
             light,
             light_buffer,
             light_bind_group,
@@ -468,35 +456,21 @@ impl State {
                     stencil_ops: None,
                 }),
             });
-            self.display.queue.write_buffer(
-                &self.obj_instance.buff,
-                0,
-                bytemuck::cast_slice(&[self.obj_instance.to_raw()])
-            );
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(1, self.obj_instance.buff.slice(..));
-            use model::DrawModel;
-            render_pass.draw_model(
-                &self.obj_instance.model,
-                &self.uniform_bind_group,
-                &self.light_bind_group
-            );
+            for instance in &mut self.instances {
+                instance.update(&self.display);
+            }
 
+            for instance in &self.instances {
 
+                render_pass.draw_instance(
+                    instance,
+                    &self.uniform_bind_group,
+                    &self.light_bind_group
+                )
+            }
 
-            self.display.queue.write_buffer(
-                &self.obj_model_instance.buff,
-                0,
-                bytemuck::cast_slice(&[self.obj_model_instance.to_raw()])
-            );
-            render_pass.set_vertex_buffer(1, self.obj_model_instance.buff.slice(..));
-
-            render_pass.draw_model(
-                &self.obj_model_instance.model,
-                &self.uniform_bind_group,
-                &self.light_bind_group
-            );
         }
         // Render the UI
 

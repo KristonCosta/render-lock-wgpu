@@ -1,14 +1,15 @@
 use std::rc::Rc;
-use crate::model::Model;
+use crate::model::{Model, DrawModel};
 use crate::renderer::display::Display;
 use wgpu::util::DeviceExt;
-use cgmath::Zero;
+use cgmath::{Zero, Vector3};
 
 pub struct Instance {
     pub position: cgmath::Vector3<f32>,
     pub rotation: cgmath::Quaternion<f32>,
     pub buff: wgpu::Buffer,
-    pub model: Rc<Model>
+    pub model: Rc<Model>,
+    dirty: bool
 }
 
 impl Instance {
@@ -19,9 +20,56 @@ impl Instance {
                 .into(),
         }
     }
+
+    pub fn update(&mut self, display: &Display) {
+        if self.dirty {
+            display.queue.write_buffer(
+                &self.buff,
+                0,
+                bytemuck::cast_slice(&[self.to_raw()])
+            );
+            self.dirty = false;
+        }
+    }
+
+    pub fn set_position(&mut self, position: Vector3<f32>) {
+        self.position = position;
+        self.dirty = true;
+    }
 }
 
-trait NewInstance {
+pub trait DrawInstance<'a, 'b>
+    where
+        'b: 'a,
+{
+    fn draw_instance(
+        &mut self,
+        instance: &'b Instance,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    );
+}
+
+impl<'a, 'b> DrawInstance<'a, 'b> for wgpu::RenderPass<'a>
+    where
+        'b: 'a,
+{
+    fn draw_instance(
+        &mut self,
+        instance: &'b Instance,
+        uniforms: &'b wgpu::BindGroup,
+        light: &'b wgpu::BindGroup,
+    ) {
+        self.set_vertex_buffer(1, instance.buff.slice(..));
+        self.draw_model(
+            &instance.model,
+            uniforms,
+            light,
+        );
+    }
+}
+
+pub trait NewInstance {
     fn new_instance(&self, display: &Display) -> Instance;
 }
 
@@ -38,7 +86,8 @@ impl NewInstance for Rc<Model> {
             position: cgmath::Vector3::zero(),
             rotation: cgmath::Quaternion::zero(),
             buff,
-            model: self.clone()
+            model: self.clone(),
+            dirty: true,
         }
     }
 }
