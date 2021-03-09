@@ -46,12 +46,12 @@ impl ShaderData {
 }
 
 fn main() -> Result<()> {
-    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=resources");
 
     let mut shader_paths = [
-        glob("./src/**/*.vert")?,
-        glob("./src/**/*.frag")?,
-        glob("./src/**/*.comp")?,
+        glob("./resources/**/*.vert")?,
+        glob("./resources/**/*.frag")?,
+        glob("./resources/**/*.comp")?,
     ];
 
     let shaders = shader_paths
@@ -78,8 +78,6 @@ fn main() -> Result<()> {
         )?;
         write(shader.spv_path, compiled.as_binary_u8())?;
     }
-
-    println!("cargo:rerun-if-changed=resources/*");
 
     let out_dir = env::var("OUT_DIR")?;
     let mut copy_options = CopyOptions::new();
