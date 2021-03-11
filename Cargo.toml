@@ -19,6 +19,7 @@ failure = "0.1"
 imgui = "0.7"
 imgui-wgpu = "0.14"
 imgui-winit-support = "0.7"
+legion = "0.4.0"
 
 [dependencies.tobj]
 version = "2.0"

@@ -30,23 +30,23 @@ void main() {
     // Not supporting normal mapping for now
     // vec4 object_normal = texture(sampler2D(t_normal, s_normal), v_tex_coords);
 
-    float ambient_strength = 0.1;
-    vec3 ambient_color = light_color * ambient_strength;
-    vec3 normal = normalize(v_normal);
-    // vec3 normal = normalize(object_normal.rgb * 2.0 - 1.0);
-    vec3 light_dir = normalize(light_position - v_position);
+//    float ambient_strength = 0.1;
+//    vec3 ambient_color = light_color * ambient_strength;
+//    vec3 normal = normalize(v_normal);
+//    // vec3 normal = normalize(object_normal.rgb * 2.0 - 1.0);
+//    vec3 light_dir = normalize(light_position - v_position);
+//
+//    vec3 view_dir = normalize(u_view_position - v_position);
+//    vec3 half_dir = normalize(view_dir + light_dir);
+//    vec3 reflect_dir = reflect(-light_dir, normal);
+//
+//    float specular_strength = pow(max(dot(normal, half_dir), 0.0), 32);
+//    vec3 specular_color = specular_strength * light_color;
+//
+//    float diffuse_strength = max(dot(normal, light_dir), 0.0);
+//    vec3 diffuse_color = light_color * diffuse_strength;
+//
+//    vec3 result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
 
-    vec3 view_dir = normalize(u_view_position - v_position);
-    vec3 half_dir = normalize(view_dir + light_dir);
-    vec3 reflect_dir = reflect(-light_dir, normal);
-
-    float specular_strength = pow(max(dot(normal, half_dir), 0.0), 32);
-    vec3 specular_color = specular_strength * light_color;
-
-    float diffuse_strength = max(dot(normal, light_dir), 0.0);
-    vec3 diffuse_color = light_color * diffuse_strength;
-
-    vec3 result = (ambient_color + diffuse_color + specular_color) * object_color.xyz;
-
-    f_color = vec4(result, object_color.a);
+    f_color = object_color; // vec4(result, object_color.a);
 }
