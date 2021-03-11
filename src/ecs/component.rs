@@ -1,10 +1,10 @@
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Position {
-    x: f32,
-    y: f32,
+pub struct Transform {
+    pub position: cgmath::Vector3<f32>,
+    pub rotation: cgmath::Quaternion<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelReference {
-    asset_reference: String,
+    pub asset_reference: crate::asset::ModelAsset,
 }

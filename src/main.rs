@@ -1,20 +1,25 @@
+use pipeline::SimplePipeline;
+use renderer::Renderer;
+use scene::SceneManager;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
+mod asset;
+mod bind_group;
 mod camera;
 mod display;
+mod ecs;
 mod event;
 mod game;
 mod instance;
 mod light;
+mod material;
 mod math;
 mod mesh;
 mod pipeline;
-mod primitive;
-mod ray;
 mod renderer;
 mod scene;
 mod texture;
@@ -75,10 +80,14 @@ fn input_mapper(event: &WindowEvent) -> Option<event::Event> {
 fn main() {
     env_logger::init();
 
-    let mut game = game::Game::new();
-
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
+
+    let mut game = game::Game::new();
+    let mut scene_manager = SceneManager::new();
+    let mut renderer: Renderer<SimplePipeline> = Renderer::new(&window);
+
+    // let mut renderer = None;
 
     // let mut state = block_on(State::new(&window));
 
@@ -115,6 +124,11 @@ fn main() {
         }
         Event::RedrawRequested(_) => {
             game.update();
+            let scene =
+                scene_manager.load_scene(&game.world, &renderer.pipeline, &renderer.display);
+            if let Some(scene) = scene {
+                renderer.render(scene, &game.camera);
+            }
         }
         Event::MainEventsCleared => {
             window.request_redraw();

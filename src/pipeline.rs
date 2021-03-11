@@ -1,16 +1,30 @@
+use std::collections::HashMap;
+
 use wgpu::util::DeviceExt;
 
 use super::display::Display;
 use crate::{
+    bind_group::{BindGroup, BindGroupType},
     instance::InstanceRaw,
     light::Light,
+    material::Material,
     mesh::{MeshVertex, Vertex},
     texture::Texture,
 };
 
+pub struct PipelineBindGroupInfo {
+    pub layout: wgpu::BindGroupLayout,
+    pub index: u64,
+}
+
 pub trait Pipeline {
-    fn update_view_projection(projection: cgmath::Matrix4<f32>);
-    fn update_view_position(position: cgmath::Vector4<f32>);
+    fn new(window: &Display) -> Self;
+    fn update_view_projection(&mut self, projection: cgmath::Matrix4<f32>);
+    fn update_view_position(&mut self, position: cgmath::Vector4<f32>);
+    fn bind_group_layout(&self, bind_group_type: BindGroupType) -> Option<&PipelineBindGroupInfo>;
+    fn depth_stencil_attachment(&self) -> Option<wgpu::RenderPassDepthStencilAttachmentDescriptor>;
+    fn prepare(&self, display: &Display);
+    fn bind<'a, 'b: 'a>(&'b self, render_pass: &mut wgpu::RenderPass<'a>);
 }
 
 pub struct SimplePipeline {
@@ -24,40 +38,28 @@ pub struct SimplePipeline {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
 
-    texture_bind_group_layout: wgpu::BindGroupLayout,
-
+    bind_group_layouts: HashMap<BindGroupType, PipelineBindGroupInfo>,
     depth_texture: Texture,
 }
 
-impl SimplePipeline {
-    pub fn new(display: &Display) -> Self {
-        let texture_bind_group_layout =
-            display
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("texture_bind_group_layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStage::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler {
-                                comparison: false,
-                                filtering: false,
-                            },
-                            count: None,
-                        },
-                    ],
-                });
+impl Pipeline for SimplePipeline {
+    fn prepare(&self, display: &Display) {
+        display.queue.write_buffer(
+            &self.uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[self.uniforms]),
+        )
+    }
+    fn bind<'a, 'b: 'a>(&'b self, render_pass: &mut wgpu::RenderPass<'a>) {
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(1, &self.uniform_bind_group, &[]);
+        render_pass.set_bind_group(2, &self.light_bind_group, &[]);
+    }
+
+    fn new(display: &Display) -> Self {
+        let mut bind_group_layouts = HashMap::new();
+
+        let texture_bind_group_layout = display.device.create_bind_group_layout(&Material::desc());
 
         let uniforms = Uniforms::new();
 
@@ -175,6 +177,14 @@ impl SimplePipeline {
             )
         };
 
+        bind_group_layouts.insert(
+            Material::bind_group_type(),
+            PipelineBindGroupInfo {
+                layout: texture_bind_group_layout,
+                index: 0,
+            },
+        );
+
         Self {
             render_pipeline,
             uniforms,
@@ -184,18 +194,34 @@ impl SimplePipeline {
             light_buffer,
             light_bind_group,
             depth_texture,
-            texture_bind_group_layout,
+            bind_group_layouts,
         }
     }
-
-    pub fn texture_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.texture_bind_group_layout
+    fn update_view_projection(&mut self, projection: cgmath::Matrix4<f32>) {
+        self.uniforms.view_proj = projection.into();
     }
 
-    pub fn project(&mut self, camera: &Camera) {
-        self.uniforms.update_view_proj(camera);
+    fn update_view_position(&mut self, position: cgmath::Vector4<f32>) {
+        self.uniforms.view_position = position.into();
     }
 
+    fn bind_group_layout(&self, bind_group_type: BindGroupType) -> Option<&PipelineBindGroupInfo> {
+        self.bind_group_layouts.get(&bind_group_type)
+    }
+
+    fn depth_stencil_attachment(&self) -> Option<wgpu::RenderPassDepthStencilAttachmentDescriptor> {
+        Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+            attachment: &self.depth_texture.view,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: true,
+            }),
+            stencil_ops: None,
+        })
+    }
+}
+
+impl SimplePipeline {
     pub fn render_pass<'a>(
         &'a self,
         frame: &'a wgpu::SwapChainTexture,

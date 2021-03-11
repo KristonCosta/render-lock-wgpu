@@ -26,7 +26,7 @@ impl Instance {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
 pub struct InstanceRaw {
     model: [[f32; 4]; 4],
 }
