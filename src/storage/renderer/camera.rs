@@ -1,4 +1,4 @@
-use winit::event::{WindowEvent, KeyboardInput, VirtualKeyCode, ElementState};
+use winit::event::{ElementState, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -28,7 +28,6 @@ impl Camera {
     }
 }
 
-
 // START
 
 pub struct CameraController {
@@ -54,15 +53,15 @@ impl CameraController {
         }
     }
 
-    pub fn process_events(&mut self, event: &WindowEvent) -> bool {
+    pub fn process_event(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::KeyboardInput {
                 input:
-                KeyboardInput {
-                    state,
-                    virtual_keycode: Some(keycode),
-                    ..
-                },
+                    KeyboardInput {
+                        state,
+                        virtual_keycode: Some(keycode),
+                        ..
+                    },
                 ..
             } => {
                 let is_pressed = *state == ElementState::Pressed;

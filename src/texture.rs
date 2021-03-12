@@ -1,7 +1,7 @@
 use anyhow::*;
 use image::GenericImageView;
-use std::path::Path;
 use std::fmt::Debug;
+use std::path::Path;
 
 pub struct Texture {
     pub texture: wgpu::Texture,
@@ -123,7 +123,6 @@ impl Texture {
     ) -> Result<Self> {
         let path_copy = path.as_ref().to_path_buf();
         let label = path_copy.to_str();
-        println!("{:?}", path);
         let img = image::open(path)?;
         Self::from_image(device, queue, &img, label)
     }
