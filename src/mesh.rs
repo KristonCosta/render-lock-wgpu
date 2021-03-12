@@ -1,4 +1,4 @@
-use crate::{material::Material, pipeline::Pipeline};
+use crate::{display::Display, instance::InstanceRaw, material::Material, pipeline::Pipeline};
 use anyhow::*;
 use std::path::Path;
 use std::{fmt::Debug, ops::Range};
@@ -46,6 +46,7 @@ pub struct Mesh {
     pub name: String,
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
+
     pub num_elements: u32,
     pub material: usize,
 }
@@ -54,9 +55,18 @@ pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
     pub name: String,
+    pub instance_buffer: wgpu::Buffer,
 }
 
 impl Model {
+    pub fn load_instance_buffers(&self, display: &Display, instance_data: Vec<InstanceRaw>) {
+        display.queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(instance_data.as_slice()),
+        );
+    }
+
     pub fn load<F: AsRef<Path> + Debug, P: Pipeline>(
         name: String,
         device: &wgpu::Device,
@@ -70,7 +80,12 @@ impl Model {
             .parent()
             .context("Directory has no parent")?;
         let mut materials = Vec::new();
-
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance Buffer"),
+            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+            size: (std::mem::size_of::<InstanceRaw>() * 100) as u64,
+            mapped_at_creation: false,
+        });
         for mat in obj_materials {
             let material = Material::load(device, queue, mat, pipeline, containing_folder);
 
@@ -87,7 +102,7 @@ impl Model {
                         m.mesh.positions[i * 3 + 1],
                         m.mesh.positions[i * 3 + 2],
                     ],
-                    tex_coords: [m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1]],
+                    tex_coords: [m.mesh.texcoords[i * 2], 1.0 - m.mesh.texcoords[i * 2 + 1]],
                     normal: [
                         m.mesh.normals[i * 3],
                         m.mesh.normals[i * 3 + 1],
@@ -121,6 +136,7 @@ impl Model {
             meshes,
             materials,
             name,
+            instance_buffer,
         })
     }
 }
@@ -155,6 +171,7 @@ where
     }
 
     fn draw_model_instanced(&mut self, model: &'b Model, instances: Range<u32>) {
+        self.set_vertex_buffer(1, model.instance_buffer.slice(..));
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
             self.draw_mesh_instanced(mesh, material, instances.clone());

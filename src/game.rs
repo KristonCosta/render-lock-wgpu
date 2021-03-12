@@ -20,10 +20,10 @@ impl Game {
         let mut world = World::default();
         world.push((
             Transform {
-                position: cgmath::Vector3::new(0.5, 0.0, 0.0),
+                position: cgmath::Vector3::new(0.0, 0.0, 0.0),
                 rotation: cgmath::Quaternion::look_at(
-                    cgmath::Vector3::new(0.5, 0.5, 0.5),
-                    cgmath::Vector3::new(0.1, 1.0, 0.5),
+                    cgmath::Vector3::new(1.0, 0.0, 0.0),
+                    cgmath::Vector3::new(0.0, 0.0, 1.0),
                 ),
             },
             ModelReference {
@@ -33,9 +33,9 @@ impl Game {
 
         world.push((
             Transform {
-                position: cgmath::Vector3::new(1.0, 0.0, 1.0),
+                position: cgmath::Vector3::new(2.0, 0.0, 1.0),
                 rotation: cgmath::Quaternion::look_at(
-                    cgmath::Vector3::new(0.5, 0.5, 0.5),
+                    cgmath::Vector3::new(0.0, 3.0, 3.0),
                     cgmath::Vector3::new(1.1, 1.0, 0.0),
                 ),
             },

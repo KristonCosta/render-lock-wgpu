@@ -46,7 +46,7 @@ impl ShaderData {
 }
 
 fn main() -> Result<()> {
-    println!("cargo:rerun-if-changed=resources");
+    // println!("cargo:rerun-if-changed=resources");
 
     let mut shader_paths = [
         glob("./resources/**/*.vert")?,

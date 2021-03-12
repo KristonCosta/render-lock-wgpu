@@ -14,7 +14,6 @@ pub struct Renderer<P: Pipeline> {
     camera_metadata: CameraMetadata,
     pub display: Display,
     pub pipeline: P,
-    pub instance_buffer: wgpu::Buffer,
 }
 
 impl<P: Pipeline> Renderer<P> {
@@ -22,17 +21,11 @@ impl<P: Pipeline> Renderer<P> {
         let display = block_on(Display::new(window));
         let camera_metadata = CameraMetadata::new(&display);
         let pipeline = P::new(&display);
-        let instance_buffer = display.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Instance Buffer"),
-            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
-            size: (std::mem::size_of::<InstanceRaw>() * 100) as u64,
-            mapped_at_creation: false,
-        });
+
         Self {
             display,
             camera_metadata,
             pipeline,
-            instance_buffer,
         }
     }
 
@@ -51,7 +44,7 @@ impl<P: Pipeline> Renderer<P> {
                 });
         {
             let mut current_scene = Some(scene);
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &frame.view,
@@ -66,36 +59,20 @@ impl<P: Pipeline> Renderer<P> {
                         store: true,
                     },
                 }],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: self.pipeline.depth_stencil_attachment(),
             });
+            self.pipeline.bind(&mut render_pass);
             while current_scene.is_some() {
-                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                        attachment: &frame.view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        },
-                    }],
-                    depth_stencil_attachment: self.pipeline.depth_stencil_attachment(),
-                });
-
-                self.pipeline.bind(&mut render_pass);
                 let scene = current_scene.unwrap();
                 let instance_data = scene
                     .instances
                     .iter()
                     .map(Instance::to_raw)
                     .collect::<Vec<_>>();
-                println!("Rendering {:?}   {:?}", scene.model.name, instance_data);
-                self.display.queue.write_buffer(
-                    &self.instance_buffer,
-                    0,
-                    bytemuck::cast_slice(instance_data.as_slice()),
-                );
-                render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
+
+                scene
+                    .model
+                    .load_instance_buffers(&self.display, instance_data);
 
                 render_pass.draw_model_instanced(scene.model, 0..scene.instances.len() as u32);
                 current_scene = scene.next;
