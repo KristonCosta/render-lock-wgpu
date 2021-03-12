@@ -17,35 +17,47 @@ pub struct Game {
 impl Game {
     pub fn new() -> Self {
         let mut world = World::default();
+
         world.push((
             Transform {
                 position: cgmath::Vector3::new(0.0, 0.0, 0.0),
                 rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
             },
             Momentum {
-                rotation: cgmath::Euler::new(cgmath::Rad(0.01), cgmath::Rad(0.0), cgmath::Rad(0.0)),
-            },
-            ModelReference {
-                asset_reference: crate::asset::ModelAsset::Room,
-            },
-        ));
-
-        world.push((
-            Transform {
-                position: cgmath::Vector3::new(2.0, 0.0, 1.0),
                 rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
             },
-            Momentum {
-                rotation: cgmath::Euler::new(
-                    cgmath::Rad(0.01),
-                    cgmath::Rad(0.01),
-                    cgmath::Rad(0.01),
-                ),
-            },
-            ModelReference {
-                asset_reference: crate::asset::ModelAsset::Cube,
-            },
+            crate::chunk::make_block(),
         ));
+
+        // world.push((
+        //     Transform {
+        //         position: cgmath::Vector3::new(0.0, 0.0, 0.0),
+        //         rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
+        //     },
+        //     Momentum {
+        //         rotation: cgmath::Euler::new(cgmath::Rad(0.01), cgmath::Rad(0.0), cgmath::Rad(0.0)),
+        //     },
+        //     ModelReference {
+        //         asset_reference: crate::asset::ModelAsset::Room,
+        //     },
+        // ));
+
+        // world.push((
+        //     Transform {
+        //         position: cgmath::Vector3::new(2.0, 0.0, 1.0),
+        //         rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
+        //     },
+        //     Momentum {
+        //         rotation: cgmath::Euler::new(
+        //             cgmath::Rad(0.01),
+        //             cgmath::Rad(0.01),
+        //             cgmath::Rad(0.01),
+        //         ),
+        //     },
+        //     ModelReference {
+        //         asset_reference: crate::asset::ModelAsset::Cube,
+        //     },
+        // ));
 
         let schedule = Schedule::builder()
             .add_system(update_positions_system())

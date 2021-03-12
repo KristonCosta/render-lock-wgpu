@@ -2,4 +2,5 @@
 pub enum ModelAsset {
     Cube,
     Room,
+    Dynamic(u32),
 }

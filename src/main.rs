@@ -13,6 +13,7 @@ use winit::{
 mod asset;
 mod bind_group;
 mod camera;
+mod chunk;
 mod display;
 mod ecs;
 mod event;

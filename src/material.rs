@@ -1,7 +1,7 @@
 use crate::texture::Texture;
 use crate::{bind_group, pipeline::Pipeline};
 use anyhow::*;
-
+use std::fmt::Debug;
 use std::path::Path;
 
 pub struct Material {
@@ -74,6 +74,36 @@ impl Material {
         });
         Ok(Self {
             name: material.name,
+            diffuse_texture,
+            bind_group: bind_group.unwrap(),
+        })
+    }
+    pub fn load_from_texture<F: AsRef<Path> + Debug, P: Pipeline>(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pipeline: &P,
+        texture_path: F,
+    ) -> Result<Self> {
+        let diffuse_texture = Texture::load(device, queue, texture_path)?;
+        let bind_group_info = pipeline.bind_group_layout(bind_group::BindGroupType::Material);
+        let bind_group = bind_group_info.map(|info| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &info.layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                    },
+                ],
+                label: None,
+            })
+        });
+        Ok(Self {
+            name: "DynamicLoad".to_string(),
             diffuse_texture,
             bind_group: bind_group.unwrap(),
         })

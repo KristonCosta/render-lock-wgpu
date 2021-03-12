@@ -9,11 +9,11 @@ pub trait Vertex {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MeshVertex {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-    normal: [f32; 3],
+    pub position: [f32; 3],
+    pub tex_coords: [f32; 2],
+    pub normal: [f32; 3],
 }
 
 impl Vertex for MeshVertex {
@@ -139,6 +139,59 @@ impl Model {
             instance_buffer,
         })
     }
+    pub fn load_from_vertex_data<F: AsRef<Path> + Debug, P: Pipeline>(
+        name: String,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pipeline: &P,
+        vertex_data: &[MeshVertex],
+        index_data: &[u32],
+        texture_path: F,
+    ) -> Result<Self> {
+        let mut materials = Vec::new();
+        materials.push(Material::load_from_texture(
+            device,
+            queue,
+            pipeline,
+            texture_path,
+        )?);
+        let mut meshes = Vec::new();
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("{:?} Vertex Buffer", name)),
+            contents: bytemuck::cast_slice(vertex_data),
+            usage: wgpu::BufferUsage::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("{:?} Index Buffer", name)),
+            contents: bytemuck::cast_slice(index_data),
+            usage: wgpu::BufferUsage::INDEX,
+        });
+
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance Buffer"),
+            usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+            size: (std::mem::size_of::<InstanceRaw>()) as u64,
+            mapped_at_creation: false,
+        });
+
+        meshes.push(Mesh {
+            name: format!("Mesh {:?}", name),
+            vertex_buffer,
+            index_buffer,
+            num_elements: index_data.len() as u32,
+            material: 0,
+        });
+
+        println!("Loaded mesh with {:?} indexes", index_data.len());
+
+        Ok(Self {
+            meshes,
+            materials,
+            name,
+            instance_buffer,
+        })
+    }
 }
 
 pub trait DrawModel<'a, 'b>
@@ -172,6 +225,7 @@ where
 
     fn draw_model_instanced(&mut self, model: &'b Model, instances: Range<u32>) {
         self.set_vertex_buffer(1, model.instance_buffer.slice(..));
+
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
             self.draw_mesh_instanced(mesh, material, instances.clone());

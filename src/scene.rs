@@ -42,6 +42,35 @@ impl SceneManager {
                 .unwrap()
                 .push(instance)
         }
+        let mut query = <(&component::Transform, &component::MeshReference)>::query();
+        for (transform, mesh_ref) in query.iter(world) {
+            let mesh_ref: &component::MeshReference = mesh_ref;
+            let resources = std::path::Path::new(env!("OUT_DIR")).join("resources");
+            let q: cgmath::Quaternion<f32> = transform.rotation.into();
+            let instance = Instance::new(transform.position.clone(), q.normalize());
+            let model_asset = ModelAsset::Dynamic(mesh_ref.idx);
+            if !self.assets.contains_key(&model_asset) {
+                let model = Model::load_from_vertex_data(
+                    "dynamic".to_string(),
+                    &display.device,
+                    &display.queue,
+                    pipeline,
+                    &mesh_ref.vertex_data,
+                    &mesh_ref.index_data,
+                    resources.join("blockatlas.jpg"),
+                )
+                .unwrap();
+                self.assets.insert(model_asset, model);
+            }
+
+            if !instance_bundle.contains_key(&model_asset) {
+                instance_bundle.insert(model_asset, Vec::new());
+            }
+            instance_bundle
+                .get_mut(&model_asset)
+                .unwrap()
+                .push(instance)
+        }
 
         let mut current_scene: Option<Box<Scene>> = None;
         for (asset, _) in &instance_bundle {
@@ -57,6 +86,7 @@ impl SceneManager {
                 next: current_scene,
             }))
         }
+
         current_scene
     }
 }
@@ -80,5 +110,6 @@ fn load_asset<P: Pipeline>(model_asset: &ModelAsset, pipeline: &P, display: &Dis
             resources.join("viking_room.obj"),
         )
         .unwrap(),
+        _ => unimplemented!(),
     }
 }
