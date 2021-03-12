@@ -2,6 +2,7 @@ use crate::ecs::*;
 use crate::{
     asset::ModelAsset, display::Display, instance::Instance, mesh::Model, pipeline::Pipeline,
 };
+use cgmath::InnerSpace;
 use legion::*;
 use std::collections::HashMap;
 
@@ -34,7 +35,8 @@ impl SceneManager {
             if !instance_bundle.contains_key(&model_asset) {
                 instance_bundle.insert(model_asset, Vec::new());
             }
-            let instance = Instance::new(transform.position.clone(), transform.rotation.clone());
+            let q: cgmath::Quaternion<f32> = transform.rotation.into();
+            let instance = Instance::new(transform.position.clone(), q.normalize());
             instance_bundle
                 .get_mut(&model_asset)
                 .unwrap()

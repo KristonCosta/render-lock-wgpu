@@ -62,6 +62,7 @@ impl<P: Pipeline> Renderer<P> {
                 depth_stencil_attachment: self.pipeline.depth_stencil_attachment(),
             });
             self.pipeline.bind(&mut render_pass);
+
             while current_scene.is_some() {
                 let scene = current_scene.unwrap();
                 let instance_data = scene

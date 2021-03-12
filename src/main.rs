@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate legion;
+
 use pipeline::SimplePipeline;
 use renderer::Renderer;
 use scene::SceneManager;
