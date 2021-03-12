@@ -1,11 +1,10 @@
 use legion::*;
 
-use crate::ecs::component::*;
 use crate::{
     camera::{Camera, CameraController},
+    ecs::{component::*, system::*},
     event::Event,
 };
-use cgmath::{Rotation, Zero};
 
 pub struct Game {
     pub world: World,
@@ -21,9 +20,26 @@ impl Game {
         world.push((
             Transform {
                 position: cgmath::Vector3::new(0.0, 0.0, 0.0),
-                rotation: cgmath::Quaternion::look_at(
-                    cgmath::Vector3::new(1.0, 0.0, 0.0),
-                    cgmath::Vector3::new(0.0, 0.0, 1.0),
+                rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
+            },
+            Momentum {
+                rotation: cgmath::Euler::new(cgmath::Rad(0.01), cgmath::Rad(0.0), cgmath::Rad(0.0)),
+            },
+            ModelReference {
+                asset_reference: crate::asset::ModelAsset::Room,
+            },
+        ));
+
+        world.push((
+            Transform {
+                position: cgmath::Vector3::new(2.0, 0.0, 1.0),
+                rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
+            },
+            Momentum {
+                rotation: cgmath::Euler::new(
+                    cgmath::Rad(0.01),
+                    cgmath::Rad(0.01),
+                    cgmath::Rad(0.01),
                 ),
             },
             ModelReference {
@@ -31,20 +47,9 @@ impl Game {
             },
         ));
 
-        world.push((
-            Transform {
-                position: cgmath::Vector3::new(2.0, 0.0, 1.0),
-                rotation: cgmath::Quaternion::look_at(
-                    cgmath::Vector3::new(0.0, 3.0, 3.0),
-                    cgmath::Vector3::new(1.1, 1.0, 0.0),
-                ),
-            },
-            ModelReference {
-                asset_reference: crate::asset::ModelAsset::Room,
-            },
-        ));
-
-        let schedule = Schedule::builder().build();
+        let schedule = Schedule::builder()
+            .add_system(update_positions_system())
+            .build();
         let resources = Resources::default();
         Self {
             world,
