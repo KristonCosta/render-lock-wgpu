@@ -1,6 +1,9 @@
 #[macro_use]
 extern crate legion;
 
+#[macro_use]
+extern crate bitflags;
+
 use pipeline::SimplePipeline;
 use renderer::Renderer;
 use scene::SceneManager;
