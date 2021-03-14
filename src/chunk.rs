@@ -1,8 +1,16 @@
 use crate::ecs::component::*;
 use crate::mesh::MeshVertex;
+use noise::Fbm;
+use noise::{
+    utils::{NoiseMapBuilder, PlaneMapBuilder},
+    NoiseFn,
+};
+
+const CHUNK_SIZE: usize = 256;
 
 bitflags! {
     pub struct Sides: u32 {
+        const NONE      = 0b00000000;
         const TOP       = 0b00000001;
         const BOTTOM    = 0b00000010;
         const LEFT      = 0b00000100;
@@ -32,97 +40,69 @@ const UVS: [[f32; 2]; 4] = [
 
 const QUAD_UV_ORDER: [u32; 4] = [3, 2, 0, 1];
 
-enum CubeSide {
-    Top,
-    Bottom,
-    Left,
-    Right,
-    Forward,
-    Backward,
-}
+pub fn make_mesh() -> MeshReference {
+    let mut builder = VoxelMeshBuilder::new();
+    let mut fbm = Fbm::new();
+    fbm.octaves = 4;
+    fbm.persistence = 0.5;
 
-pub fn make_block() -> MeshReference {
-    let mut vertex_data: Vec<MeshVertex> = Vec::new();
-    let mut index_data: Vec<u32> = Vec::new();
+    PlaneMapBuilder::new(&fbm).set_size(1000, 100);
+    let mut height_map = vec![vec![vec![false; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE];
+    for x in 0..CHUNK_SIZE {
+        for z in 0..CHUNK_SIZE {
+            let stone_height =
+                fbm.get([x as f64 * 0.05, z as f64 * 0.05]) * 16.0 + (CHUNK_SIZE as f64 / 2.0);
 
-    let offset = 0;
-
-    // TOP
-
-    let (verticies, indices, offset) = generate_quad(CubeSide::Top, offset);
-    vertex_data.extend(verticies.iter());
-    index_data.extend(indices.iter());
-
-    let (verticies, indices, offset) = generate_quad(CubeSide::Bottom, offset);
-    vertex_data.extend(verticies.iter());
-    index_data.extend(indices.iter());
-
-    let (verticies, indices, offset) = generate_quad(CubeSide::Left, offset);
-    vertex_data.extend(verticies.iter());
-    index_data.extend(indices.iter());
-
-    let (verticies, indices, offset) = generate_quad(CubeSide::Right, offset);
-    vertex_data.extend(verticies.iter());
-    index_data.extend(indices.iter());
-
-    let (verticies, indices, offset) = generate_quad(CubeSide::Forward, offset);
-    vertex_data.extend(verticies.iter());
-    index_data.extend(indices.iter());
-
-    let (verticies, indices, _) = generate_quad(CubeSide::Backward, offset);
-    vertex_data.extend(verticies.iter());
-    index_data.extend(indices.iter());
-
-    MeshReference {
-        idx: 0,
-        vertex_data: vertex_data.into_boxed_slice(),
-        index_data: index_data.into_boxed_slice(),
+            for y in 0..CHUNK_SIZE {
+                height_map[x][y][z] = y < stone_height as usize;
+            }
+        }
     }
+
+    for x in 0..CHUNK_SIZE {
+        for y in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                let pos = cgmath::Vector3::new(x, y, z);
+                if height_map[x][y][z] {
+                    builder
+                        .set_position(&pos)
+                        .generate_voxel(get_sides(&height_map, &pos));
+                }
+            }
+        }
+    }
+
+    builder.build()
 }
 
-fn generate_quad(side: CubeSide, index_offset: u32) -> ([MeshVertex; 4], [u32; 6], u32) {
-    let vertex_idx = match side {
-        CubeSide::Top => [7, 6, 5, 4],
-        CubeSide::Bottom => [0, 1, 2, 3],
-        CubeSide::Left => [7, 4, 0, 3],
-        CubeSide::Right => [5, 6, 2, 1],
-        CubeSide::Forward => [4, 5, 1, 0],
-        CubeSide::Backward => [6, 7, 3, 2],
-    };
+fn get_sides(height_map: &Vec<Vec<Vec<bool>>>, pos: &cgmath::Vector3<usize>) -> Sides {
+    let mut sides = Sides::NONE;
 
-    (
-        [
-            MeshVertex {
-                position: CUBE_COORDINATES[vertex_idx[0]].clone(),
-                tex_coords: UVS[3].clone(),
-                normal: [0.0, 1.0, 0.0],
-            },
-            MeshVertex {
-                position: CUBE_COORDINATES[vertex_idx[1]].clone(),
-                tex_coords: UVS[2].clone(),
-                normal: [0.0, 1.0, 0.0],
-            },
-            MeshVertex {
-                position: CUBE_COORDINATES[vertex_idx[2]].clone(),
-                tex_coords: UVS[0].clone(),
-                normal: [0.0, 1.0, 0.0],
-            },
-            MeshVertex {
-                position: CUBE_COORDINATES[vertex_idx[3]].clone(),
-                tex_coords: UVS[1].clone(),
-                normal: [0.0, 1.0, 0.0],
-            },
-        ],
-        [
-            3 + index_offset,
-            1 + index_offset,
-            0 + index_offset,
-            3 + index_offset,
-            2 + index_offset,
-            1 + index_offset,
-        ],
-        index_offset + 4,
-    )
+    if (pos.x as i32) - 1 < 0 || !(height_map[(pos.x - 1)][pos.y][pos.z]) {
+        sides |= Sides::LEFT
+    }
+
+    if pos.x + 1 >= CHUNK_SIZE || !(height_map[(pos.x + 1)][pos.y][pos.z]) {
+        sides |= Sides::RIGHT
+    }
+
+    if (pos.y as i32) - 1 < 0 || !(height_map[(pos.x)][pos.y - 1][pos.z]) {
+        sides |= Sides::BOTTOM
+    }
+
+    if pos.y + 1 >= CHUNK_SIZE || !(height_map[(pos.x)][pos.y + 1][pos.z]) {
+        sides |= Sides::TOP
+    }
+
+    if (pos.z as i32) - 1 < 0 || !(height_map[(pos.x)][pos.y][pos.z - 1]) {
+        sides |= Sides::BACKWARD
+    }
+
+    if pos.z + 1 >= CHUNK_SIZE || !(height_map[(pos.x)][pos.y][pos.z + 1]) {
+        sides |= Sides::FORWARD
+    }
+
+    sides
 }
 
 pub struct VoxelMeshBuilder {
@@ -151,8 +131,10 @@ impl VoxelMeshBuilder {
         }
     }
 
-    pub fn set_position(&mut self, position: cgmath::Vector3<u32>) -> &mut VoxelMeshBuilder {
-        self.current_cube_pos = position;
+    pub fn set_position(&mut self, position: &cgmath::Vector3<usize>) -> &mut VoxelMeshBuilder {
+        self.current_cube_pos.x = position.x as u32;
+        self.current_cube_pos.y = position.y as u32;
+        self.current_cube_pos.z = position.z as u32;
         self
     }
 
@@ -170,11 +152,23 @@ impl VoxelMeshBuilder {
         self
     }
 
+    pub fn build(self) -> MeshReference {
+        MeshReference {
+            idx: 0,
+            vertex_data: self.vertices.into_boxed_slice(),
+            index_data: self.indices.into_boxed_slice(),
+        }
+    }
+
     fn build_quad(&mut self, vertex_idx: &[u32; 4]) {
         for (vertex, uv) in vertex_idx.iter().zip(QUAD_UV_ORDER.iter()) {
+            let mut v = CUBE_COORDINATES[*vertex as usize].clone();
+            v[0] += self.current_cube_pos.x as f32;
+            v[1] += self.current_cube_pos.y as f32;
+            v[2] += self.current_cube_pos.z as f32;
             self.vertices.push(MeshVertex {
-                position: CUBE_COORDINATES[vertex_idx[0] as usize].clone(),
-                tex_coords: UVS[3].clone(),
+                position: v,
+                tex_coords: UVS[*uv as usize].clone(),
                 normal: [0.0, 1.0, 0.0],
             });
         }

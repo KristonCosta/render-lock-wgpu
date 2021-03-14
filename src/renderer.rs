@@ -29,19 +29,19 @@ impl<P: Pipeline> Renderer<P> {
         }
     }
 
-    pub fn render(&mut self, scene: Box<Scene>, camera: &Camera) {
+    pub fn render(
+        &mut self,
+        frame: &wgpu::SwapChainTexture,
+        encoder: &mut wgpu::CommandEncoder,
+        scene: Box<Scene>,
+        camera: &Camera,
+    ) {
         self.pipeline.update_view_position(camera.position());
         self.pipeline
             .update_view_projection(camera.projection(&self.camera_metadata));
 
         self.pipeline.prepare(&self.display);
-        let frame = self.display.swap_chain.get_current_frame().unwrap().output;
-        let mut encoder =
-            self.display
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
+
         {
             let mut current_scene = Some(scene);
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -79,6 +79,5 @@ impl<P: Pipeline> Renderer<P> {
                 current_scene = scene.next;
             }
         }
-        self.display.queue.submit(std::iter::once(encoder.finish()));
     }
 }

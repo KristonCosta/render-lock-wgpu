@@ -21,6 +21,7 @@ mod display;
 mod ecs;
 mod event;
 mod game;
+mod gui;
 mod instance;
 mod light;
 mod material;
@@ -30,6 +31,7 @@ mod pipeline;
 mod renderer;
 mod scene;
 mod texture;
+mod timestep;
 
 fn input_mapper(event: &WindowEvent) -> Option<event::Event> {
     match event {
@@ -93,6 +95,7 @@ fn main() {
     let mut game = game::Game::new();
     let mut scene_manager = SceneManager::new();
     let mut renderer: Renderer<SimplePipeline> = Renderer::new(&window);
+    let mut gui = gui::Gui::new(&window, &renderer.display);
 
     // let mut renderer = None;
 
@@ -117,7 +120,7 @@ fn main() {
                         } => *control_flow = ControlFlow::Exit,
                         _ => {}
                     },
-                    WindowEvent::Resized(physical_size) => {
+                    WindowEvent::Resized(_) => {
                         // state.resize(*physical_size);
                         // TODO: ADD RENDERER HANDLING
                     }
@@ -130,12 +133,30 @@ fn main() {
             }
         }
         Event::RedrawRequested(_) => {
+            let frame = renderer
+                .display
+                .swap_chain
+                .get_current_frame()
+                .unwrap()
+                .output;
+            let mut encoder =
+                renderer
+                    .display
+                    .device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Render Encoder"),
+                    });
             game.update();
             let scene =
                 scene_manager.load_scene(&game.world, &renderer.pipeline, &renderer.display);
             if let Some(scene) = scene {
-                renderer.render(scene, &game.camera);
+                renderer.render(&frame, &mut encoder, scene, &game.camera);
             }
+            gui.render(&window, &frame, &mut encoder, &renderer.display);
+            renderer
+                .display
+                .queue
+                .submit(std::iter::once(encoder.finish()));
         }
         Event::MainEventsCleared => {
             window.request_redraw();

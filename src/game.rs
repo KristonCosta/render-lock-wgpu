@@ -26,7 +26,7 @@ impl Game {
             Momentum {
                 rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
             },
-            crate::chunk::make_block(),
+            crate::chunk::make_mesh(),
         ));
 
         // world.push((
