@@ -2,7 +2,7 @@ use futures::executor::block_on;
 use winit::window::Window;
 
 use crate::{
-    camera::{Camera, CameraMetadata},
+    camera::{Camera, Projection},
     display::Display,
     instance::{Instance, InstanceRaw},
     mesh::DrawModel,
@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub struct Renderer<P: Pipeline> {
-    camera_metadata: CameraMetadata,
+    camera_metadata: Projection,
     pub display: Display,
     pub pipeline: P,
 }
@@ -19,7 +19,13 @@ pub struct Renderer<P: Pipeline> {
 impl<P: Pipeline> Renderer<P> {
     pub fn new(window: &Window) -> Self {
         let display = block_on(Display::new(window));
-        let camera_metadata = CameraMetadata::new(&display);
+        let camera_metadata = Projection::new(
+            display.swap_chain_descriptor.width,
+            display.swap_chain_descriptor.height,
+            cgmath::Deg(45.0),
+            0.1,
+            100.0,
+        );
         let pipeline = P::new(&display);
 
         Self {

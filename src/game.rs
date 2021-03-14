@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use legion::*;
 
 use crate::{
@@ -66,8 +68,8 @@ impl Game {
         Self {
             world,
             schedule,
-            camera: Camera::new(),
-            camera_controller: CameraController::new(0.02),
+            camera: Camera::new((-1.0, 5.0, -1.0), cgmath::Deg(-180.0), cgmath::Deg(-20.0)),
+            camera_controller: CameraController::new(4.0, 0.4),
             resources,
         }
     }
@@ -76,8 +78,8 @@ impl Game {
         self.camera_controller.process_event(event)
     }
 
-    pub fn update(&mut self) {
-        self.camera_controller.update(&mut self.camera);
+    pub fn update(&mut self, dt: Duration) {
+        self.camera_controller.update(&mut self.camera, dt);
         self.schedule.execute(&mut self.world, &mut self.resources);
     }
 }

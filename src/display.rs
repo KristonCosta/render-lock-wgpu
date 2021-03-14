@@ -10,7 +10,8 @@ pub struct Display {
 impl Display {
     pub async fn new(window: &winit::window::Window) -> Self {
         let size = window.inner_size();
-
+        window.set_cursor_grab(true).unwrap();
+        window.set_cursor_visible(false);
         let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
         let surface = unsafe { instance.create_surface(window) };
         let adapter = instance

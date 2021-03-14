@@ -6,4 +6,6 @@ pub enum Event {
     MoveCameraRight(bool),
     MoveCameraUp(bool),
     MoveCameraDown(bool),
+    RotateCamera(f64, f64),
+    ZoomCamera(f64),
 }

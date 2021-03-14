@@ -1,15 +1,11 @@
 use crate::{display::*, timestep};
 use imgui_winit_support::WinitPlatform;
-use std::time::Instant;
-struct Layout {
-    clock: timestep::TimeStep,
-}
+use std::time::{Duration, Instant};
 
 pub struct Gui {
     pub platform: imgui_winit_support::WinitPlatform,
     pub context: imgui::Context,
     pub renderer: imgui_wgpu::Renderer,
-    layout: Layout,
 }
 
 impl Gui {
@@ -48,33 +44,27 @@ impl Gui {
             renderer_config,
         );
 
-        let layout = Layout {
-            clock: timestep::TimeStep::new(),
-        };
-
         Self {
             platform,
             context,
             renderer,
-            layout,
         }
     }
 
     pub fn render(
         &mut self,
+        dt: Duration,
+        fps: u32,
         window: &winit::window::Window,
         frame: &wgpu::SwapChainTexture,
         encoder: &mut wgpu::CommandEncoder,
         display: &Display,
     ) {
-        let current_time = Instant::now();
-        let dt = current_time.duration_since(self.layout.clock.last_time);
-        self.layout.clock.delta();
         self.context.io_mut().update_delta_time(dt);
         self.platform
             .prepare_frame(self.context.io_mut(), window)
             .unwrap();
-        let fps = self.layout.clock.frame_rate;
+
         let ui = self.context.frame();
         {
             let window = imgui::Window::new(imgui::im_str!("Hello Imgui from WGPU!"));
