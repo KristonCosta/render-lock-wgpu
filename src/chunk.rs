@@ -1,11 +1,144 @@
-use crate::ecs::component::*;
 use crate::mesh::MeshVertex;
+use crate::worker::pool::Pool;
+use crate::{ecs::component::*, worker::worker::Worker};
+use legion::World;
 use noise::Fbm;
 use noise::{
     utils::{NoiseMapBuilder, PlaneMapBuilder},
     NoiseFn,
 };
+use std::thread;
+use std::{
+    collections::HashMap,
+    sync::{mpsc, Arc, Mutex},
+};
 
+pub struct ChunkManager {
+    current_idx: u32,
+    receiver: mpsc::Receiver<MeshReference>,
+    sender: mpsc::Sender<MeshReference>,
+    pool: Pool<ChunkWork, ChunkWorkerInitializer, ChunkWorker>,
+    pending: HashMap<u32, PendingWork>,
+}
+
+struct PendingWork {
+    position: cgmath::Vector3<f32>,
+    killer: mpsc::Sender<bool>,
+}
+
+impl PendingWork {
+    fn kill(&mut self) {
+        self.killer.send(true);
+    }
+}
+
+impl ChunkManager {
+    pub fn new(device: Arc<wgpu::Device>) -> Self {
+        let (sender, receiver) = mpsc::channel();
+        Self {
+            current_idx: 1,
+            receiver,
+            sender,
+            pool: Pool::new(
+                1,
+                ChunkWorkerInitializer {
+                    device: Arc::clone(&device),
+                },
+            ),
+            pending: HashMap::new(),
+        }
+    }
+
+    pub fn dispatch(
+        &mut self,
+        position: cgmath::Vector3<f32>,
+        chunk_location: cgmath::Vector2<f32>,
+    ) {
+        let (sender, receiver) = mpsc::channel();
+        let pending_work = PendingWork {
+            position,
+            killer: sender,
+        };
+        let work = ChunkWork {
+            idx: self.current_idx,
+            position: chunk_location,
+            receiver,
+            sender: self.sender.clone(),
+        };
+        self.pending.insert(self.current_idx, pending_work);
+        self.current_idx += 1;
+        self.pool.dispatch(work);
+    }
+
+    pub fn update(&mut self, world: &mut World) {
+        if let Ok(chunk) = self.receiver.try_recv() {
+            let pending = self.pending.remove(&chunk.idx).unwrap();
+            world.push((
+                Transform {
+                    position: pending.position,
+                    rotation: cgmath::Euler::new(
+                        cgmath::Rad(0.0),
+                        cgmath::Rad(0.0),
+                        cgmath::Rad(0.0),
+                    ),
+                },
+                chunk,
+            ));
+        }
+    }
+}
+
+pub struct ChunkWorker {
+    id: usize,
+    thread: thread::JoinHandle<()>,
+}
+
+pub struct ChunkWorkerInitializer {
+    device: Arc<wgpu::Device>,
+}
+
+pub struct ChunkWork {
+    idx: u32,
+    position: cgmath::Vector2<f32>,
+    receiver: mpsc::Receiver<bool>,
+    sender: mpsc::Sender<MeshReference>,
+}
+
+impl Worker<ChunkWork, ChunkWorkerInitializer> for ChunkWorker {
+    fn new(
+        id: usize,
+        bundle: &ChunkWorkerInitializer,
+        receiver: Arc<Mutex<mpsc::Receiver<ChunkWork>>>,
+    ) -> Self {
+        let exector = ChunkExecutor {
+            device: Arc::clone(&bundle.device),
+        };
+        let thread = thread::spawn(move || loop {
+            let work = receiver.lock().unwrap().recv().unwrap();
+            match work.receiver.try_recv() {
+                Ok(true) => continue,
+                Err(mpsc::TryRecvError::Disconnected) => continue,
+                _ => {}
+            }
+
+            exector.execute(work);
+        });
+
+        Self { id, thread }
+    }
+}
+
+pub struct ChunkExecutor {
+    device: Arc<wgpu::Device>,
+}
+
+impl ChunkExecutor {
+    fn execute(&self, data: ChunkWork) {
+        let idx = data.idx;
+        let mesh = make_mesh(idx as u32, data.position);
+        data.sender.send(mesh).unwrap();
+    }
+}
 const CHUNK_SIZE: usize = 32;
 
 bitflags! {
@@ -50,45 +183,48 @@ impl ChunkBuilder {
     }
 
     pub fn make_mesh(&mut self, chunk_location: cgmath::Vector2<f32>) -> MeshReference {
-        let mut builder = VoxelMeshBuilder::new();
-        let mut fbm = Fbm::new();
-        fbm.octaves = 4;
-        fbm.persistence = 0.5;
-
-        PlaneMapBuilder::new(&fbm).set_size(1000, 100);
-        let mut height_map =
-            vec![vec![vec![false; CHUNK_SIZE + 2]; CHUNK_SIZE + 2]; CHUNK_SIZE + 2];
-        for x in 0..CHUNK_SIZE + 2 {
-            for z in 0..CHUNK_SIZE + 2 {
-                let stone_height = fbm.get([
-                    (x as f32 + chunk_location.x) as f64 * 0.05,
-                    (z as f32 + chunk_location.y) as f64 * 0.05,
-                ]) * 16.0
-                    + (CHUNK_SIZE as f64 / 2.0);
-
-                for y in 0..CHUNK_SIZE {
-                    height_map[x][y][z] = y < stone_height as usize;
-                }
-            }
-        }
-
-        for x in 1..CHUNK_SIZE + 1 {
-            for y in 1..CHUNK_SIZE + 1 {
-                for z in 1..CHUNK_SIZE + 1 {
-                    let pos = cgmath::Vector3::new(x, y, z);
-                    if height_map[x][y][z] {
-                        builder
-                            .set_position(&pos)
-                            .generate_voxel(get_sides(&height_map, &pos));
-                    }
-                }
-            }
-        }
-
-        let res = builder.build(self.idx);
+        let res = make_mesh(self.idx, chunk_location);
         self.idx += 1;
         res
     }
+}
+
+pub fn make_mesh(idx: u32, chunk_location: cgmath::Vector2<f32>) -> MeshReference {
+    let mut builder = VoxelMeshBuilder::new();
+    let mut fbm = Fbm::new();
+    fbm.octaves = 4;
+    fbm.persistence = 0.5;
+
+    PlaneMapBuilder::new(&fbm).set_size(1000, 100);
+    let mut height_map = vec![vec![vec![false; CHUNK_SIZE + 2]; CHUNK_SIZE + 2]; CHUNK_SIZE + 2];
+    for x in 0..CHUNK_SIZE + 2 {
+        for z in 0..CHUNK_SIZE + 2 {
+            let stone_height = fbm.get([
+                (x as f32 + chunk_location.x) as f64 * 0.05,
+                (z as f32 + chunk_location.y) as f64 * 0.05,
+            ]) * 16.0
+                + (CHUNK_SIZE as f64 / 2.0);
+
+            for y in 0..CHUNK_SIZE {
+                height_map[x][y][z] = y < stone_height as usize;
+            }
+        }
+    }
+
+    for x in 1..CHUNK_SIZE + 1 {
+        for y in 1..CHUNK_SIZE + 1 {
+            for z in 1..CHUNK_SIZE + 1 {
+                let pos = cgmath::Vector3::new(x, y, z);
+                if height_map[x][y][z] {
+                    builder
+                        .set_position(&pos)
+                        .generate_voxel(get_sides(&height_map, &pos));
+                }
+            }
+        }
+    }
+
+    builder.build(idx)
 }
 
 fn get_sides(height_map: &Vec<Vec<Vec<bool>>>, pos: &cgmath::Vector3<usize>) -> Sides {

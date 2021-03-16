@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 pub struct Display {
     pub surface: wgpu::Surface,
-    pub device: wgpu::Device,
+    pub device: Arc<wgpu::Device>,
     pub queue: wgpu::Queue,
     pub swap_chain_descriptor: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
@@ -48,7 +50,7 @@ impl Display {
 
         Self {
             surface,
-            device,
+            device: Arc::new(device),
             queue,
             swap_chain_descriptor,
             swap_chain,

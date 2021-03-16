@@ -4,7 +4,7 @@ extern crate legion;
 #[macro_use]
 extern crate bitflags;
 
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use pipeline::SimplePipeline;
 use renderer::Renderer;
@@ -114,10 +114,12 @@ fn main() {
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut clock = timestep::TimeStep::new();
-    let mut game = game::Game::new();
-    let mut scene_manager = SceneManager::new();
     let mut renderer: Renderer<SimplePipeline> = Renderer::new(&window);
+
+    let mut clock = timestep::TimeStep::new();
+    let mut game = game::Game::new(Arc::clone(&renderer.display.device));
+    let mut scene_manager = SceneManager::new();
+
     let mut gui = gui::Gui::new(&window, &renderer.display);
 
     // let mut renderer = None;
