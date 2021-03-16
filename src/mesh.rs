@@ -198,12 +198,18 @@ pub trait DrawModel<'a, 'b>
 where
     'b: 'a,
 {
-    fn draw_model_instanced(&mut self, model: &'b Model, instances: Range<u32>);
+    fn draw_model_instanced(
+        &mut self,
+        model: &'b Model,
+        instances: Range<u32>,
+        bind_material: bool,
+    );
     fn draw_mesh_instanced(
         &mut self,
         mesh: &'b Mesh,
         material: &'b Material,
         instances: Range<u32>,
+        bind_material: bool,
     );
 }
 
@@ -216,19 +222,28 @@ where
         mesh: &'b Mesh,
         material: &'b Material,
         instances: Range<u32>,
+        bind_material: bool,
     ) {
         self.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
         self.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        self.set_bind_group(0, &material.bind_group, &[]);
+        if bind_material {
+            self.set_bind_group(0, &material.bind_group, &[]);
+        }
+
         self.draw_indexed(0..mesh.num_elements, 0, instances);
     }
 
-    fn draw_model_instanced(&mut self, model: &'b Model, instances: Range<u32>) {
+    fn draw_model_instanced(
+        &mut self,
+        model: &'b Model,
+        instances: Range<u32>,
+        bind_material: bool,
+    ) {
         self.set_vertex_buffer(1, model.instance_buffer.slice(..));
 
         for mesh in &model.meshes {
             let material = &model.materials[mesh.material];
-            self.draw_mesh_instanced(mesh, material, instances.clone());
+            self.draw_mesh_instanced(mesh, material, instances.clone(), bind_material);
         }
     }
 }

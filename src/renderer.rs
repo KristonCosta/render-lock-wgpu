@@ -24,7 +24,7 @@ impl<P: Pipeline> Renderer<P> {
             display.swap_chain_descriptor.height,
             cgmath::Deg(45.0),
             0.1,
-            100.0,
+            1000.0,
         );
         let pipeline = P::new(&display);
 
@@ -68,7 +68,7 @@ impl<P: Pipeline> Renderer<P> {
                 depth_stencil_attachment: self.pipeline.depth_stencil_attachment(),
             });
             self.pipeline.bind(&mut render_pass);
-
+            let mut first = true;
             while current_scene.is_some() {
                 let scene = current_scene.unwrap();
                 let instance_data = scene
@@ -81,7 +81,12 @@ impl<P: Pipeline> Renderer<P> {
                     .model
                     .load_instance_buffers(&self.display, instance_data);
 
-                render_pass.draw_model_instanced(scene.model, 0..scene.instances.len() as u32);
+                render_pass.draw_model_instanced(
+                    scene.model,
+                    0..scene.instances.len() as u32,
+                    first,
+                );
+                first = false;
                 current_scene = scene.next;
             }
         }

@@ -35,6 +35,7 @@ mod renderer;
 mod scene;
 mod texture;
 mod timestep;
+mod worker;
 
 fn device_input_mapper(event: &DeviceEvent) -> Option<event::Event> {
     match event {

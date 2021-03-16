@@ -6,7 +6,7 @@ use noise::{
     NoiseFn,
 };
 
-const CHUNK_SIZE: usize = 256;
+const CHUNK_SIZE: usize = 32;
 
 bitflags! {
     pub struct Sides: u32 {
@@ -40,65 +40,81 @@ const UVS: [[f32; 2]; 4] = [
 
 const QUAD_UV_ORDER: [u32; 4] = [3, 2, 0, 1];
 
-pub fn make_mesh() -> MeshReference {
-    let mut builder = VoxelMeshBuilder::new();
-    let mut fbm = Fbm::new();
-    fbm.octaves = 4;
-    fbm.persistence = 0.5;
+pub struct ChunkBuilder {
+    idx: u32,
+}
 
-    PlaneMapBuilder::new(&fbm).set_size(1000, 100);
-    let mut height_map = vec![vec![vec![false; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE];
-    for x in 0..CHUNK_SIZE {
-        for z in 0..CHUNK_SIZE {
-            let stone_height =
-                fbm.get([x as f64 * 0.05, z as f64 * 0.05]) * 16.0 + (CHUNK_SIZE as f64 / 2.0);
-
-            for y in 0..CHUNK_SIZE {
-                height_map[x][y][z] = y < stone_height as usize;
-            }
-        }
+impl ChunkBuilder {
+    pub fn new() -> Self {
+        Self { idx: 1 }
     }
 
-    for x in 0..CHUNK_SIZE {
-        for y in 0..CHUNK_SIZE {
-            for z in 0..CHUNK_SIZE {
-                let pos = cgmath::Vector3::new(x, y, z);
-                if height_map[x][y][z] {
-                    builder
-                        .set_position(&pos)
-                        .generate_voxel(get_sides(&height_map, &pos));
+    pub fn make_mesh(&mut self, chunk_location: cgmath::Vector2<f32>) -> MeshReference {
+        let mut builder = VoxelMeshBuilder::new();
+        let mut fbm = Fbm::new();
+        fbm.octaves = 4;
+        fbm.persistence = 0.5;
+
+        PlaneMapBuilder::new(&fbm).set_size(1000, 100);
+        let mut height_map =
+            vec![vec![vec![false; CHUNK_SIZE + 2]; CHUNK_SIZE + 2]; CHUNK_SIZE + 2];
+        for x in 0..CHUNK_SIZE + 2 {
+            for z in 0..CHUNK_SIZE + 2 {
+                let stone_height = fbm.get([
+                    (x as f32 + chunk_location.x) as f64 * 0.05,
+                    (z as f32 + chunk_location.y) as f64 * 0.05,
+                ]) * 16.0
+                    + (CHUNK_SIZE as f64 / 2.0);
+
+                for y in 0..CHUNK_SIZE {
+                    height_map[x][y][z] = y < stone_height as usize;
                 }
             }
         }
-    }
 
-    builder.build()
+        for x in 1..CHUNK_SIZE + 1 {
+            for y in 1..CHUNK_SIZE + 1 {
+                for z in 1..CHUNK_SIZE + 1 {
+                    let pos = cgmath::Vector3::new(x, y, z);
+                    if height_map[x][y][z] {
+                        builder
+                            .set_position(&pos)
+                            .generate_voxel(get_sides(&height_map, &pos));
+                    }
+                }
+            }
+        }
+
+        let res = builder.build(self.idx);
+        self.idx += 1;
+        res
+    }
 }
 
 fn get_sides(height_map: &Vec<Vec<Vec<bool>>>, pos: &cgmath::Vector3<usize>) -> Sides {
     let mut sides = Sides::NONE;
 
-    if (pos.x as i32) - 1 < 0 || !(height_map[(pos.x - 1)][pos.y][pos.z]) {
+    if !(height_map[(pos.x - 1)][pos.y][pos.z]) {
         sides |= Sides::LEFT
     }
 
-    if pos.x + 1 >= CHUNK_SIZE || !(height_map[(pos.x + 1)][pos.y][pos.z]) {
+    if !(height_map[(pos.x + 1)][pos.y][pos.z]) {
         sides |= Sides::RIGHT
     }
 
-    if (pos.y as i32) - 1 < 0 || !(height_map[(pos.x)][pos.y - 1][pos.z]) {
+    if (pos.y as i32) > 0 && !(height_map[(pos.x)][pos.y - 1][pos.z]) {
         sides |= Sides::BOTTOM
     }
 
-    if pos.y + 1 >= CHUNK_SIZE || !(height_map[(pos.x)][pos.y + 1][pos.z]) {
+    if !(height_map[(pos.x)][pos.y + 1][pos.z]) {
         sides |= Sides::TOP
     }
 
-    if (pos.z as i32) - 1 < 0 || !(height_map[(pos.x)][pos.y][pos.z - 1]) {
+    if !(height_map[(pos.x)][pos.y][pos.z - 1]) {
         sides |= Sides::BACKWARD
     }
 
-    if pos.z + 1 >= CHUNK_SIZE || !(height_map[(pos.x)][pos.y][pos.z + 1]) {
+    if !(height_map[(pos.x)][pos.y][pos.z + 1]) {
         sides |= Sides::FORWARD
     }
 
@@ -152,9 +168,9 @@ impl VoxelMeshBuilder {
         self
     }
 
-    pub fn build(self) -> MeshReference {
+    pub fn build(self, idx: u32) -> MeshReference {
         MeshReference {
-            idx: 0,
+            idx,
             vertex_data: self.vertices.into_boxed_slice(),
             index_data: self.indices.into_boxed_slice(),
         }

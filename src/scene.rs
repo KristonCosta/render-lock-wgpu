@@ -49,6 +49,7 @@ impl SceneManager {
             let q: cgmath::Quaternion<f32> = transform.rotation.into();
             let instance = Instance::new(transform.position.clone(), q.normalize());
             let model_asset = ModelAsset::Dynamic(mesh_ref.idx);
+
             if !self.assets.contains_key(&model_asset) {
                 let model = Model::load_from_vertex_data(
                     "dynamic".to_string(),

@@ -4,6 +4,7 @@ use legion::*;
 
 use crate::{
     camera::{Camera, CameraController},
+    chunk::ChunkBuilder,
     ecs::{component::*, system::*},
     event::Event,
 };
@@ -18,48 +19,28 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Self {
+        use cgmath::InnerSpace;
         let mut world = World::default();
-
-        world.push((
-            Transform {
-                position: cgmath::Vector3::new(0.0, 0.0, 0.0),
-                rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
-            },
-            Momentum {
-                rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
-            },
-            crate::chunk::make_mesh(),
-        ));
-
-        // world.push((
-        //     Transform {
-        //         position: cgmath::Vector3::new(0.0, 0.0, 0.0),
-        //         rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
-        //     },
-        //     Momentum {
-        //         rotation: cgmath::Euler::new(cgmath::Rad(0.01), cgmath::Rad(0.0), cgmath::Rad(0.0)),
-        //     },
-        //     ModelReference {
-        //         asset_reference: crate::asset::ModelAsset::Room,
-        //     },
-        // ));
-
-        // world.push((
-        //     Transform {
-        //         position: cgmath::Vector3::new(2.0, 0.0, 1.0),
-        //         rotation: cgmath::Euler::new(cgmath::Rad(0.0), cgmath::Rad(0.0), cgmath::Rad(0.0)),
-        //     },
-        //     Momentum {
-        //         rotation: cgmath::Euler::new(
-        //             cgmath::Rad(0.01),
-        //             cgmath::Rad(0.01),
-        //             cgmath::Rad(0.01),
-        //         ),
-        //     },
-        //     ModelReference {
-        //         asset_reference: crate::asset::ModelAsset::Cube,
-        //     },
-        // ));
+        let mut mesh_builder = ChunkBuilder::new();
+        for x in -10..11 {
+            for z in -10..11 {
+                let chunk_position = cgmath::Vector2::new((x as f32) * 32.0, (z as f32) * 32.0);
+                if chunk_position.magnitude2() > 65536 as f32 {
+                    continue;
+                }
+                world.push((
+                    Transform {
+                        position: cgmath::Vector3::new(chunk_position.x, 0.0, chunk_position.y),
+                        rotation: cgmath::Euler::new(
+                            cgmath::Rad(0.0),
+                            cgmath::Rad(0.0),
+                            cgmath::Rad(0.0),
+                        ),
+                    },
+                    mesh_builder.make_mesh(chunk_position),
+                ));
+            }
+        }
 
         let schedule = Schedule::builder()
             .add_system(update_positions_system())
