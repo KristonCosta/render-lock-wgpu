@@ -48,7 +48,7 @@ impl SceneManager {
             let resources = std::path::Path::new(env!("OUT_DIR")).join("resources");
             let q: cgmath::Quaternion<f32> = transform.rotation.into();
             let instance = Instance::new(transform.position.clone(), q.normalize());
-            let model_asset = ModelAsset::Dynamic(mesh_ref.idx);
+            let model_asset = ModelAsset::DynamicMesh(mesh_ref.idx);
 
             if !self.assets.contains_key(&model_asset) {
                 let model = Model::load_from_vertex_data(

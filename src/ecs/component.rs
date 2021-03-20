@@ -22,5 +22,14 @@ pub struct ModelReference {
 pub struct MeshReference {
     pub vertex_data: Box<[MeshVertex]>,
     pub index_data: Box<[u32]>,
-    pub idx: u32,
+    pub idx: MeshId,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd)]
+pub struct MeshId(pub i32, pub i32);
+
+impl Ord for MeshId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.0 * self.0 + self.1 * self.1).cmp(&(other.0 * other.0 + other.1 * other.1))
+    }
 }

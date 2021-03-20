@@ -1,7 +1,4 @@
 #[macro_use]
-extern crate legion;
-
-#[macro_use]
 extern crate bitflags;
 
 use std::{sync::Arc, time::Instant};
@@ -113,7 +110,12 @@ fn main() {
     env_logger::init();
 
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+            1200.0, 800.0,
+        )))
+        .build(&event_loop)
+        .unwrap();
     let mut renderer: Renderer<SimplePipeline> = Renderer::new(&window);
 
     let mut clock = timestep::TimeStep::new();
@@ -154,7 +156,7 @@ fn main() {
                         // state.resize(*physical_size);
                         // TODO: ADD RENDERER HANDLING
                     }
-                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                    WindowEvent::ScaleFactorChanged { .. } => {
                         // state.resize(**new_inner_size)
                         // TODO: ADD RENDERER HANDLING
                     }
@@ -184,7 +186,7 @@ fn main() {
             let scene =
                 scene_manager.load_scene(&game.world, &renderer.pipeline, &renderer.display);
             if let Some(scene) = scene {
-                renderer.render(&frame, &mut encoder, scene, &game.camera);
+                renderer.render(&frame, &mut encoder, scene, &game.camera());
             }
             gui.render(
                 dt,

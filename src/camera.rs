@@ -44,7 +44,7 @@ impl Projection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera {
     pub position: cgmath::Point3<f32>,
     yaw: cgmath::Rad<f32>,

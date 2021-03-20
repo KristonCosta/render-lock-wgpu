@@ -1,15 +1,15 @@
 use crate::mesh::MeshVertex;
 use crate::worker::pool::Pool;
 use crate::{ecs::component::*, worker::worker::Worker};
-use legion::World;
+use legion::{Entity, World};
 use noise::Fbm;
 use noise::{
     utils::{NoiseMapBuilder, PlaneMapBuilder},
     NoiseFn,
 };
-use std::thread;
+use std::{collections::HashSet, thread};
 use std::{
-    collections::HashMap,
+    collections::{BinaryHeap, HashMap},
     sync::{mpsc, Arc, Mutex},
 };
 
@@ -18,7 +18,9 @@ pub struct ChunkManager {
     receiver: mpsc::Receiver<MeshReference>,
     sender: mpsc::Sender<MeshReference>,
     pool: Pool<ChunkWork, ChunkWorkerInitializer, ChunkWorker>,
-    pending: HashMap<u32, PendingWork>,
+    pending: HashMap<MeshId, PendingWork>,
+    active_position: cgmath::Vector2<i32>,
+    live_chunks: HashMap<MeshId, Entity>,
 }
 
 struct PendingWork {
@@ -28,7 +30,7 @@ struct PendingWork {
 
 impl PendingWork {
     fn kill(&mut self) {
-        self.killer.send(true);
+        self.killer.send(true).expect("Failed to kill pending task");
     }
 }
 
@@ -40,19 +42,21 @@ impl ChunkManager {
             receiver,
             sender,
             pool: Pool::new(
-                1,
+                2,
                 ChunkWorkerInitializer {
                     device: Arc::clone(&device),
                 },
             ),
             pending: HashMap::new(),
+            active_position: cgmath::Vector2::new(0, 0),
+            live_chunks: HashMap::new(),
         }
     }
 
     pub fn dispatch(
         &mut self,
         position: cgmath::Vector3<f32>,
-        chunk_location: cgmath::Vector2<f32>,
+        chunk_location: cgmath::Vector2<i32>,
     ) {
         let (sender, receiver) = mpsc::channel();
         let pending_work = PendingWork {
@@ -65,26 +69,98 @@ impl ChunkManager {
             receiver,
             sender: self.sender.clone(),
         };
-        self.pending.insert(self.current_idx, pending_work);
+        self.pending.insert(
+            MeshId(chunk_location.x as i32, chunk_location.y as i32),
+            pending_work,
+        );
         self.current_idx += 1;
         self.pool.dispatch(work);
     }
 
-    pub fn update(&mut self, world: &mut World) {
-        if let Ok(chunk) = self.receiver.try_recv() {
-            let pending = self.pending.remove(&chunk.idx).unwrap();
-            world.push((
-                Transform {
-                    position: pending.position,
-                    rotation: cgmath::Euler::new(
-                        cgmath::Rad(0.0),
-                        cgmath::Rad(0.0),
-                        cgmath::Rad(0.0),
-                    ),
-                },
-                chunk,
-            ));
+    pub fn load_region(&mut self, chunk_position: cgmath::Vector2<i32>) -> HashSet<Entity> {
+        println!("Loading chunk around {:?}", chunk_position);
+        let mut heap = BinaryHeap::new();
+        let mut active_set = HashSet::new();
+        for x in -CHUNK_RADIUS..CHUNK_RADIUS + 1 {
+            for z in -CHUNK_RADIUS..CHUNK_RADIUS + 1 {
+                let chunk_id = MeshId(chunk_position.x + x, chunk_position.y + z);
+                if x * x + z * z > CHUNK_RADIUS * CHUNK_RADIUS {
+                    continue;
+                }
+                active_set.insert(chunk_id.clone());
+                if !self.live_chunks.contains_key(&chunk_id) {
+                    heap.push(chunk_id);
+                }
+            }
         }
+        let mut to_remove = HashSet::new();
+
+        for (chunk, _) in &self.live_chunks {
+            if !active_set.contains(chunk) {
+                to_remove.insert(chunk.clone());
+            }
+        }
+
+        let mut removed_entities = HashSet::new();
+        for chunk in to_remove {
+            removed_entities.insert(self.live_chunks.remove(&chunk).unwrap());
+        }
+
+        while let Some(chunk_id) = heap.pop() {
+            let position = cgmath::Vector3::new(
+                (chunk_id.0 * CHUNK_SIZE as i32) as f32,
+                0.0,
+                (chunk_id.1 * CHUNK_SIZE as i32) as f32,
+            );
+            let c_p = cgmath::Vector2::new(chunk_id.0, chunk_id.1);
+
+            self.dispatch(position, c_p);
+        }
+
+        removed_entities
+    }
+
+    pub fn update(&mut self, world: &mut World, position: cgmath::Vector2<f32>) {
+        let new_pos = Self::world_to_chunk_space(position);
+        if self.active_position != new_pos {
+            println!("Loading new chunk position");
+            self.active_position = new_pos;
+            self.pending.drain().for_each(|(_, pending)| {
+                pending.killer.send(true);
+            });
+            let entities_to_delete = self.load_region(self.active_position);
+
+            for entity in entities_to_delete {
+                world.remove(entity);
+            }
+        }
+
+        if let Ok(chunk) = self.receiver.try_recv() {
+            let pending = self.pending.remove(&chunk.idx);
+            if let Some(pending) = pending {
+                let idx = chunk.idx.clone();
+                let entity = world.push((
+                    Transform {
+                        position: pending.position,
+                        rotation: cgmath::Euler::new(
+                            cgmath::Rad(0.0),
+                            cgmath::Rad(0.0),
+                            cgmath::Rad(0.0),
+                        ),
+                    },
+                    chunk,
+                ));
+                self.live_chunks.insert(idx, entity);
+                // break;
+            }
+        }
+    }
+
+    pub fn world_to_chunk_space(position: cgmath::Vector2<f32>) -> cgmath::Vector2<i32> {
+        cgmath::Vector2::new(
+            (position.x as i32) / CHUNK_SIZE as i32,
+            (position.y as i32) / CHUNK_SIZE as i32,
+        )
     }
 }
 
@@ -99,7 +175,7 @@ pub struct ChunkWorkerInitializer {
 
 pub struct ChunkWork {
     idx: u32,
-    position: cgmath::Vector2<f32>,
+    position: cgmath::Vector2<i32>,
     receiver: mpsc::Receiver<bool>,
     sender: mpsc::Sender<MeshReference>,
 }
@@ -115,10 +191,14 @@ impl Worker<ChunkWork, ChunkWorkerInitializer> for ChunkWorker {
         };
         let thread = thread::spawn(move || loop {
             let work = receiver.lock().unwrap().recv().unwrap();
-            match work.receiver.try_recv() {
-                Ok(true) => continue,
-                Err(mpsc::TryRecvError::Disconnected) => continue,
-                _ => {}
+            let skip = match work.receiver.try_recv() {
+                Ok(true) => true,
+                Err(mpsc::TryRecvError::Disconnected) => true,
+                _ => false,
+            };
+            if skip {
+                println!("Skipping");
+                continue;
             }
 
             exector.execute(work);
@@ -140,6 +220,7 @@ impl ChunkExecutor {
     }
 }
 const CHUNK_SIZE: usize = 32;
+const CHUNK_RADIUS: i32 = 10;
 
 bitflags! {
     pub struct Sides: u32 {
@@ -182,14 +263,14 @@ impl ChunkBuilder {
         Self { idx: 1 }
     }
 
-    pub fn make_mesh(&mut self, chunk_location: cgmath::Vector2<f32>) -> MeshReference {
+    pub fn make_mesh(&mut self, chunk_location: cgmath::Vector2<i32>) -> MeshReference {
         let res = make_mesh(self.idx, chunk_location);
         self.idx += 1;
         res
     }
 }
 
-pub fn make_mesh(idx: u32, chunk_location: cgmath::Vector2<f32>) -> MeshReference {
+pub fn make_mesh(idx: u32, chunk_location: cgmath::Vector2<i32>) -> MeshReference {
     let mut builder = VoxelMeshBuilder::new();
     let mut fbm = Fbm::new();
     fbm.octaves = 4;
@@ -200,8 +281,8 @@ pub fn make_mesh(idx: u32, chunk_location: cgmath::Vector2<f32>) -> MeshReferenc
     for x in 0..CHUNK_SIZE + 2 {
         for z in 0..CHUNK_SIZE + 2 {
             let stone_height = fbm.get([
-                (x as f32 + chunk_location.x) as f64 * 0.05,
-                (z as f32 + chunk_location.y) as f64 * 0.05,
+                (x as i32 + chunk_location.x * CHUNK_SIZE as i32) as f64 * 0.05,
+                (z as i32 + chunk_location.y * CHUNK_SIZE as i32) as f64 * 0.05,
             ]) * 16.0
                 + (CHUNK_SIZE as f64 / 2.0);
 
@@ -224,7 +305,7 @@ pub fn make_mesh(idx: u32, chunk_location: cgmath::Vector2<f32>) -> MeshReferenc
         }
     }
 
-    builder.build(idx)
+    builder.build(MeshId(chunk_location.x as i32, chunk_location.y as i32))
 }
 
 fn get_sides(height_map: &Vec<Vec<Vec<bool>>>, pos: &cgmath::Vector3<usize>) -> Sides {
@@ -304,7 +385,7 @@ impl VoxelMeshBuilder {
         self
     }
 
-    pub fn build(self, idx: u32) -> MeshReference {
+    pub fn build(self, idx: MeshId) -> MeshReference {
         MeshReference {
             idx,
             vertex_data: self.vertices.into_boxed_slice(),
