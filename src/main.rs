@@ -120,7 +120,7 @@ fn main() {
 
     let mut clock = timestep::TimeStep::new();
     let mut game = game::Game::new(Arc::clone(&renderer.display.device));
-    let mut scene_manager = SceneManager::new();
+    let mut scene_manager = SceneManager::new(&renderer.display);
 
     let mut gui = gui::Gui::new(&window, &renderer.display);
 

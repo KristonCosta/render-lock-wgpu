@@ -3,7 +3,7 @@ use std::sync::Arc;
 pub struct Display {
     pub surface: wgpu::Surface,
     pub device: Arc<wgpu::Device>,
-    pub queue: wgpu::Queue,
+    pub queue: Arc<wgpu::Queue>,
     pub swap_chain_descriptor: wgpu::SwapChainDescriptor,
     pub swap_chain: wgpu::SwapChain,
     pub size: winit::dpi::PhysicalSize<u32>,
@@ -43,7 +43,7 @@ impl Display {
             format: swap_chain_format.into(),
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::Immediate,
         };
 
         let swap_chain = device.create_swap_chain(&surface, &swap_chain_descriptor);
@@ -51,7 +51,7 @@ impl Display {
         Self {
             surface,
             device: Arc::new(device),
-            queue,
+            queue: Arc::new(queue),
             swap_chain_descriptor,
             swap_chain,
             size,

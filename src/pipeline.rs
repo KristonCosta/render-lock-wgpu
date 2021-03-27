@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use wgpu::util::DeviceExt;
 
@@ -12,8 +12,9 @@ use crate::{
     texture::Texture,
 };
 
+#[derive(Clone)]
 pub struct PipelineBindGroupInfo {
-    pub layout: wgpu::BindGroupLayout,
+    pub layout: Arc<wgpu::BindGroupLayout>,
     pub index: u64,
 }
 
@@ -21,7 +22,10 @@ pub trait Pipeline {
     fn new(window: &Display) -> Self;
     fn update_view_projection(&mut self, projection: cgmath::Matrix4<f32>);
     fn update_view_position(&mut self, position: cgmath::Vector4<f32>);
-    fn bind_group_layout(&self, bind_group_type: BindGroupType) -> Option<&PipelineBindGroupInfo>;
+    fn bind_group_layout(
+        &self,
+        bind_group_type: BindGroupType,
+    ) -> Option<Arc<PipelineBindGroupInfo>>;
     fn depth_stencil_attachment(&self) -> Option<wgpu::RenderPassDepthStencilAttachmentDescriptor>;
     fn prepare(&self, display: &Display);
     fn bind<'a, 'b: 'a>(&'b self, render_pass: &mut wgpu::RenderPass<'a>);
@@ -38,7 +42,7 @@ pub struct SimplePipeline {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
 
-    bind_group_layouts: HashMap<BindGroupType, PipelineBindGroupInfo>,
+    bind_group_layouts: HashMap<BindGroupType, Arc<PipelineBindGroupInfo>>,
     depth_texture: Texture,
 }
 
@@ -179,10 +183,10 @@ impl Pipeline for SimplePipeline {
 
         bind_group_layouts.insert(
             Material::bind_group_type(),
-            PipelineBindGroupInfo {
-                layout: texture_bind_group_layout,
+            Arc::new(PipelineBindGroupInfo {
+                layout: Arc::new(texture_bind_group_layout),
                 index: 0,
-            },
+            }),
         );
 
         Self {
@@ -205,8 +209,13 @@ impl Pipeline for SimplePipeline {
         self.uniforms.view_position = position.into();
     }
 
-    fn bind_group_layout(&self, bind_group_type: BindGroupType) -> Option<&PipelineBindGroupInfo> {
-        self.bind_group_layouts.get(&bind_group_type)
+    fn bind_group_layout(
+        &self,
+        bind_group_type: BindGroupType,
+    ) -> Option<Arc<PipelineBindGroupInfo>> {
+        self.bind_group_layouts
+            .get(&bind_group_type)
+            .map(|x| x.clone())
     }
 
     fn depth_stencil_attachment(&self) -> Option<wgpu::RenderPassDepthStencilAttachmentDescriptor> {

@@ -15,8 +15,6 @@ use std::{
 
 pub struct ChunkManager {
     current_idx: u32,
-    receiver: mpsc::Receiver<MeshReference>,
-    sender: mpsc::Sender<MeshReference>,
     pool: Pool<ChunkWork, ChunkWorkerInitializer, ChunkWorker>,
     pending: HashMap<MeshId, PendingWork>,
     active_position: cgmath::Vector2<i32>,
@@ -26,6 +24,7 @@ pub struct ChunkManager {
 struct PendingWork {
     position: cgmath::Vector3<f32>,
     killer: mpsc::Sender<bool>,
+    complete: mpsc::Receiver<MeshReference>,
 }
 
 impl PendingWork {
@@ -36,11 +35,8 @@ impl PendingWork {
 
 impl ChunkManager {
     pub fn new(device: Arc<wgpu::Device>) -> Self {
-        let (sender, receiver) = mpsc::channel();
         Self {
             current_idx: 1,
-            receiver,
-            sender,
             pool: Pool::new(
                 2,
                 ChunkWorkerInitializer {
@@ -58,16 +54,18 @@ impl ChunkManager {
         position: cgmath::Vector3<f32>,
         chunk_location: cgmath::Vector2<i32>,
     ) {
-        let (sender, receiver) = mpsc::channel();
+        let (k_sender, k_receiver) = mpsc::channel();
+        let (d_sender, d_receiver) = mpsc::channel();
         let pending_work = PendingWork {
             position,
-            killer: sender,
+            killer: k_sender,
+            complete: d_receiver,
         };
         let work = ChunkWork {
             idx: self.current_idx,
             position: chunk_location,
-            receiver,
-            sender: self.sender.clone(),
+            receiver: k_receiver,
+            sender: d_sender,
         };
         self.pending.insert(
             MeshId(chunk_location.x as i32, chunk_location.y as i32),
@@ -135,13 +133,15 @@ impl ChunkManager {
             }
         }
 
-        if let Ok(chunk) = self.receiver.try_recv() {
-            let pending = self.pending.remove(&chunk.idx);
-            if let Some(pending) = pending {
+        let mut complete_work = HashSet::new();
+        for (idx, work) in &self.pending {
+            if let Ok(chunk) = work.complete.try_recv() {
+                complete_work.insert(idx.clone());
+
                 let idx = chunk.idx.clone();
                 let entity = world.push((
                     Transform {
-                        position: pending.position,
+                        position: work.position,
                         rotation: cgmath::Euler::new(
                             cgmath::Rad(0.0),
                             cgmath::Rad(0.0),
@@ -151,8 +151,12 @@ impl ChunkManager {
                     chunk,
                 ));
                 self.live_chunks.insert(idx, entity);
-                // break;
+                break;
             }
+        }
+
+        for work in complete_work {
+            self.pending.remove(&work);
         }
     }
 

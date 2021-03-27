@@ -1,7 +1,12 @@
-use crate::{display::Display, instance::InstanceRaw, material::Material, pipeline::Pipeline};
+use crate::{
+    display::Display,
+    instance::InstanceRaw,
+    material::Material,
+    pipeline::{Pipeline, PipelineBindGroupInfo},
+};
 use anyhow::*;
-use std::path::Path;
 use std::{fmt::Debug, ops::Range};
+use std::{path::Path, sync::Arc};
 use wgpu::util::DeviceExt;
 
 pub trait Vertex {
@@ -67,11 +72,11 @@ impl Model {
         );
     }
 
-    pub fn load<F: AsRef<Path> + Debug, P: Pipeline>(
+    pub fn load<F: AsRef<Path> + Debug>(
         name: String,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        pipeline: &P,
+        bind_group_info: Option<Arc<PipelineBindGroupInfo>>,
         file_path: F,
     ) -> Result<Self> {
         let (obj_models, obj_materials) = tobj::load_obj(file_path.as_ref(), true)?;
@@ -87,7 +92,13 @@ impl Model {
             mapped_at_creation: false,
         });
         for mat in obj_materials {
-            let material = Material::load(device, queue, mat, pipeline, containing_folder);
+            let material = Material::load(
+                device,
+                queue,
+                mat,
+                bind_group_info.clone(),
+                containing_folder,
+            );
 
             materials.push(material?);
         }
@@ -139,11 +150,11 @@ impl Model {
             instance_buffer,
         })
     }
-    pub fn load_from_vertex_data<F: AsRef<Path> + Debug, P: Pipeline>(
+    pub fn load_from_vertex_data<F: AsRef<Path> + Debug>(
         name: String,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        pipeline: &P,
+        bind_group_info: Option<Arc<PipelineBindGroupInfo>>,
         vertex_data: &[MeshVertex],
         index_data: &[u32],
         texture_path: F,
@@ -152,7 +163,7 @@ impl Model {
         materials.push(Material::load_from_texture(
             device,
             queue,
-            pipeline,
+            bind_group_info,
             texture_path,
         )?);
         let mut meshes = Vec::new();

@@ -1,8 +1,8 @@
-use crate::texture::Texture;
 use crate::{bind_group, pipeline::Pipeline};
+use crate::{pipeline::PipelineBindGroupInfo, texture::Texture};
 use anyhow::*;
-use std::fmt::Debug;
 use std::path::Path;
+use std::{fmt::Debug, sync::Arc};
 
 pub struct Material {
     pub name: String,
@@ -44,18 +44,18 @@ impl bind_group::BindGroup for Material {
 }
 
 impl Material {
-    pub fn load<F: AsRef<Path>, P: Pipeline>(
+    pub fn load<F: AsRef<Path>>(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         material: tobj::Material,
-        pipeline: &P,
+        bind_group_info: Option<Arc<PipelineBindGroupInfo>>,
         containing_folder: F,
     ) -> Result<Self> {
         let diffuse_path = material.diffuse_texture;
 
         let path = containing_folder.as_ref().join(diffuse_path);
         let diffuse_texture = Texture::load(device, queue, path)?;
-        let bind_group_info = pipeline.bind_group_layout(bind_group::BindGroupType::Material);
+
         let bind_group = bind_group_info.map(|info| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &info.layout,
@@ -78,14 +78,14 @@ impl Material {
             bind_group: bind_group.unwrap(),
         })
     }
-    pub fn load_from_texture<F: AsRef<Path> + Debug, P: Pipeline>(
+    pub fn load_from_texture<F: AsRef<Path> + Debug>(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        pipeline: &P,
+        bind_group_info: Option<Arc<PipelineBindGroupInfo>>,
         texture_path: F,
     ) -> Result<Self> {
         let diffuse_texture = Texture::load(device, queue, texture_path)?;
-        let bind_group_info = pipeline.bind_group_layout(bind_group::BindGroupType::Material);
+
         let bind_group = bind_group_info.map(|info| {
             device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout: &info.layout,
